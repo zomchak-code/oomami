@@ -6,7 +6,6 @@
     "check": "bun run --filter conv check && bun run --filter web check"
   },
   "workspaces": [
-    "backend",
     "conv",
     "web"
   ],
