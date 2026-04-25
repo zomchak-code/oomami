@@ -33,7 +33,7 @@
         },
         body: JSON.stringify({
           sessionId: id,
-          type: "user",
+          type: "user.message",
           data: { role: "user", content: message },
         }),
       },
@@ -60,8 +60,39 @@
     {session.data.name}
   </div>
   {#each events.data as event (event._id)}
-    <Badge>{event.type}</Badge>
-    <pre>{JSON.stringify(event.data, null, 2)}</pre>
+    <div>
+      <Badge>{event.type}</Badge>
+      {#if event.type === "user.message"}
+        <div>
+          <Badge variant="secondary">text</Badge>
+          {event.data.content}
+        </div>
+      {:else if event.type === "assistant.response"}
+        {#each event.data as message, idx (idx)}
+          <div>
+            <Badge variant="secondary">{message.role}</Badge>
+            <div>
+              {#if typeof message.content === "string"}
+                <p>{message.content}</p>
+              {:else}
+                {#each message.content as content (content)}
+                  <Badge variant="secondary">{content.type}</Badge>
+                  {#if content.type === "text" || content.type === "reasoning"}
+                    <p>{content.text}</p>
+                  {:else if content.type === "tool-call"}
+                    <p>{content.input}</p>
+                  {:else if content.type === "tool-result"}
+                    <p>{content.output}</p>
+                  {:else}
+                    {JSON.stringify(content)}
+                  {/if}
+                {/each}
+              {/if}
+            </div>
+          </div>
+        {/each}
+      {/if}
+    </div>
   {/each}
   <Textarea
     bind:value={message}

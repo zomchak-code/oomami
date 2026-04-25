@@ -50,7 +50,18 @@ cors.route({
 });
 
 function eventsToMessages(events: EventType[]): ModelMessage[] {
-  return events.map((event) => event.data);
+  const messages = events
+    .map((event) => {
+      if (event.type === "user.message") {
+        return [event.data];
+      } else if (event.type === "assistant.response") {
+        return event.data;
+      } else {
+        throw new Error(`Unknown event type: ${event}`);
+      }
+    })
+    .flat();
+  return messages;
 }
 
 const sessionEventsPathPrefix = "/api/sessions/";
@@ -69,12 +80,17 @@ cors.route({
     const result = streamText({
       model,
       messages: eventsToMessages(events),
-      onStepFinish: async (step) => {
-        console.log("step", step.content);
+      onChunk: (chunk) => {
+        console.log(chunk.chunk);
+      },
+      onFinish: async (finish) => {
+        finish.response.messages;
+        const content = finish.steps.map((step) => step.content).flat();
+        console.log(content);
         await createEvent(ctx, {
           sessionId,
-          type: "assistant",
-          data: { role: "assistant", content: step.content },
+          type: "assistant.response",
+          data: finish.response.messages,
         });
       },
     });

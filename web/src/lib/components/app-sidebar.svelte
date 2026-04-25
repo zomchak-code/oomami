@@ -11,7 +11,6 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Plus from "@lucide/svelte/icons/plus";
   import Bot from "@lucide/svelte/icons/bot";
-  import Home from "@lucide/svelte/icons/home";
   import MessageCircle from "@lucide/svelte/icons/message-circle";
 
   const slug = $derived(z.string().parse(page.params.slug));
@@ -74,7 +73,7 @@
     <Sidebar.Group>
       <Sidebar.GroupContent>
         <Sidebar.Menu>
-          <Sidebar.MenuItem>
+          <!-- <Sidebar.MenuItem>
             <Sidebar.MenuButton
               isActive={page.url.pathname === resolve(`/${slug}`)}
             >
@@ -85,7 +84,7 @@
                 </a>
               {/snippet}
             </Sidebar.MenuButton>
-          </Sidebar.MenuItem>
+          </Sidebar.MenuItem> -->
           <Sidebar.MenuItem>
             <Sidebar.MenuButton
               isActive={page.url.pathname === resolve(`/${slug}/agents`)}

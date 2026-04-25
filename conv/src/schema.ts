@@ -2,26 +2,55 @@ import {
   assistantModelMessageSchema,
   toolModelMessageSchema,
   userModelMessageSchema,
+  type AssistantModelMessage,
+  type ToolModelMessage,
 } from "ai";
 import { zid } from "convex-helpers/server/zod4";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import z from "zod";
-import type { Doc } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 
 export const agentIdSchema = zid("agents");
 export const sessionIdSchema = zid("sessions");
 
-type ModelMessageSchema = z.core.$ZodTypeDiscriminable;
+const eventBaseSchema = z.object({
+  sessionId: sessionIdSchema,
+});
+const userMessageEventSchema = eventBaseSchema.extend({
+  type: z.literal("user.message"),
+  data: userModelMessageSchema,
+});
 
-export const eventDataSchema = z.discriminatedUnion("role", [
-  userModelMessageSchema as ModelMessageSchema,
-  assistantModelMessageSchema as ModelMessageSchema,
-  toolModelMessageSchema as ModelMessageSchema,
+type DiscriminableModelMessageSchema<T> = z.ZodType<T> &
+  z.core.$ZodTypeDiscriminable;
+
+const discriminableAssistantModelMessageSchema =
+  assistantModelMessageSchema as DiscriminableModelMessageSchema<AssistantModelMessage>;
+const discriminableToolModelMessageSchema =
+  toolModelMessageSchema as DiscriminableModelMessageSchema<ToolModelMessage>;
+
+const assistantMessagesEventSchema = eventBaseSchema.extend({
+  type: z.literal("assistant.response"),
+  data: z.array(
+    z.discriminatedUnion("role", [
+      discriminableAssistantModelMessageSchema,
+      discriminableToolModelMessageSchema,
+    ]),
+  ),
+});
+
+toolModelMessageSchema;
+
+export const eventSchema = z.discriminatedUnion("type", [
+  userMessageEventSchema,
+  assistantMessagesEventSchema,
 ]);
 
-export type EventType = Doc<"events"> & {
-  data: z.infer<typeof eventDataSchema>;
+export type EventType = z.infer<typeof eventSchema>;
+export type PersistedEvent = z.infer<typeof eventSchema> & {
+  _id: Id<"events">;
+  _creationTime: number;
 };
 
 export default defineSchema({
