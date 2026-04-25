@@ -6,11 +6,6 @@
       "sourceType": "well-known",
       "computedHash": "6fb637bf5738d5a47201802e72b0525b87f831754ac5aa079b26c164ca117aba"
     },
-    "elysiajs": {
-      "source": "elysiajs/skills",
-      "sourceType": "github",
-      "computedHash": "55268e69a2c766ed67e56a0db57544f60cc52dba0c7f024a974baf965e525e1b"
-    },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",
