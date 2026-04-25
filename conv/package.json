@@ -1,0 +1,14 @@
+{
+  "name": "conv",
+  "scripts": {
+    "dev": "convex dev",
+    "compile": "tsc",
+    "lint": "vp lint",
+    "check": "bun compile && bun lint"
+  },
+  "dependencies": {
+    "@openrouter/ai-sdk-provider": "^2.8.0",
+    "convex": "^1.35.1",
+    "convex-helpers": "^0.1.115"
+  }
+}
