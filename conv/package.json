@@ -9,6 +9,7 @@
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^2.8.0",
     "convex": "^1.35.1",
-    "convex-helpers": "^0.1.115"
+    "convex-helpers": "^0.1.115",
+    "hono": "^4.10.7"
   }
 }

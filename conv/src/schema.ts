@@ -14,12 +14,13 @@ import type { Id } from "./_generated/dataModel";
 export const agentIdSchema = zid("agents");
 export const sessionIdSchema = zid("sessions");
 
-const eventBaseSchema = z.object({
-  sessionId: sessionIdSchema,
-});
-const userMessageEventSchema = eventBaseSchema.extend({
+const userMessageEventBodySchema = z.object({
   type: z.literal("user.message"),
   data: userModelMessageSchema,
+});
+
+const userMessageEventSchema = userMessageEventBodySchema.extend({
+  sessionId: sessionIdSchema,
 });
 
 type DiscriminableModelMessageSchema<T> = z.ZodType<T> &
@@ -30,7 +31,7 @@ const discriminableAssistantModelMessageSchema =
 const discriminableToolModelMessageSchema =
   toolModelMessageSchema as DiscriminableModelMessageSchema<ToolModelMessage>;
 
-const assistantMessagesEventSchema = eventBaseSchema.extend({
+const assistantMessagesEventBodySchema = z.object({
   type: z.literal("assistant.response"),
   data: z.array(
     z.discriminatedUnion("role", [
@@ -40,7 +41,14 @@ const assistantMessagesEventSchema = eventBaseSchema.extend({
   ),
 });
 
-toolModelMessageSchema;
+const assistantMessagesEventSchema = assistantMessagesEventBodySchema.extend({
+  sessionId: sessionIdSchema,
+});
+
+export const eventBodySchema = z.discriminatedUnion("type", [
+  userMessageEventBodySchema,
+  assistantMessagesEventBodySchema,
+]);
 
 export const eventSchema = z.discriminatedUnion("type", [
   userMessageEventSchema,
@@ -48,6 +56,7 @@ export const eventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type EventType = z.infer<typeof eventSchema>;
+export type EventBody = z.infer<typeof eventBodySchema>;
 export type PersistedEvent = z.infer<typeof eventSchema> & {
   _id: Id<"events">;
   _creationTime: number;

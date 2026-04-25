@@ -3,10 +3,11 @@
   "scripts": {
     "conv": "bun run --filter conv dev",
     "web": "bun run --filter web dev",
-    "check": "bun run --filter conv check && bun run --filter web check"
+    "check": "bun run --filter conv check && bun run --filter @oomami/sdk check && bun run --filter web check"
   },
   "workspaces": [
     "conv",
+    "sdk",
     "web"
   ],
   "devDependencies": {

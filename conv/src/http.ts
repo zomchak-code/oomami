@@ -1,52 +1,35 @@
-import { httpRouter } from "convex/server";
 import { authComponent, createAuth } from "./auth";
-import { httpAction } from "./_generated/server";
-import { corsRouter } from "convex-helpers/server/cors";
+import type { ActionCtx } from "./_generated/server";
 import { model } from "./agent";
 import { streamText, type ModelMessage } from "ai";
-import { z } from "zod";
-import { sessionIdSchema, type EventType } from "./schema";
+import {
+  eventBodySchema,
+  eventSchema,
+  sessionIdSchema,
+  type EventType,
+} from "./schema";
 import { api } from "./_generated/api";
 import { createEvent } from "./events";
+import {
+  Hono,
+  HttpRouterWithHono,
+  type HonoWithConvex,
+} from "convex-helpers/server/hono";
+import { cors } from "hono/cors";
 
-const http = httpRouter();
+const app: HonoWithConvex<ActionCtx> = new Hono();
 
-authComponent.registerRoutes(http, createAuth);
-
-const cors = corsRouter(http, {
-  allowedHeaders: ["Authorization", "Content-Type"],
-});
-
-const eventSchema = z.object({
-  sessionId: sessionIdSchema,
-  type: z.string(),
-  data: z.any(),
-});
-
-cors.route({
-  path: "/api/events",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const event = eventSchema.parse(await request.json());
-    const authorization = request.headers.get("Authorization");
-
-    await ctx.runMutation(api.events.create, event);
-
-    const sessionEventsUrl = new URL(
-      `${sessionEventsPathPrefix}${event.sessionId}`,
-      request.url,
-    );
-    const stream = await fetch(sessionEventsUrl, {
-      method: "POST",
-      headers: {
-        ...(authorization ? { Authorization: authorization } : {}),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(event),
-    });
-
-    return stream;
+app.use(
+  "/api/v0/*",
+  cors({
+    origin: "*",
+    allowHeaders: ["Authorization", "Content-Type"],
+    allowMethods: ["POST", "OPTIONS"],
   }),
+);
+
+app.notFound((c) => {
+  return c.text("Not found", 404);
 });
 
 function eventsToMessages(events: EventType[]): ModelMessage[] {
@@ -61,42 +44,45 @@ function eventsToMessages(events: EventType[]): ModelMessage[] {
       }
     })
     .flat();
+  console.log(messages);
   return messages;
 }
 
-const sessionEventsPathPrefix = "/api/sessions/";
-cors.route({
-  pathPrefix: sessionEventsPathPrefix,
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const sessionId = sessionIdSchema.parse(
-      url.pathname.slice(sessionEventsPathPrefix.length),
-    );
-    const events = await ctx.runQuery(api.events.list, {
-      sessionId,
-    });
+app.post("/api/v0/sessions/:sessionId/events", async (c) => {
+  const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+  const body = eventBodySchema.parse(await c.req.json());
+  const event = eventSchema.parse({
+    sessionId,
+    ...body,
+  });
 
-    const result = streamText({
-      model,
-      messages: eventsToMessages(events),
-      onChunk: (chunk) => {
-        console.log(chunk.chunk);
-      },
-      onFinish: async (finish) => {
-        finish.response.messages;
-        const content = finish.steps.map((step) => step.content).flat();
-        console.log(content);
-        await createEvent(ctx, {
-          sessionId,
-          type: "assistant.response",
-          data: finish.response.messages,
-        });
-      },
-    });
+  await createEvent(c.env, event);
 
-    return result.toTextStreamResponse();
-  }),
+  const events = await c.env.runQuery(api.events.list, {
+    sessionId,
+  });
+
+  const result = streamText({
+    model,
+    messages: eventsToMessages(events),
+    onChunk: (chunk) => {
+      console.log(chunk.chunk);
+    },
+    onFinish: async (finish) => {
+      const content = finish.steps.map((step) => step.content).flat();
+      console.log(content);
+      await createEvent(c.env, {
+        sessionId,
+        type: "assistant.response",
+        data: finish.response.messages,
+      });
+    },
+  });
+
+  return result.toTextStreamResponse();
 });
+
+const http = new HttpRouterWithHono(app);
+authComponent.registerRoutes(http, createAuth);
 
 export default http;

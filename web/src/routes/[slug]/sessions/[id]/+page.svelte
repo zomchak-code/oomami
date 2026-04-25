@@ -8,10 +8,16 @@
   import { Textarea } from "$lib/components/ui/textarea";
   import { useAuth } from "@mmailaender/convex-better-auth-svelte/svelte";
   import Badge from "$lib/components/ui/badge/badge.svelte";
+  import { Oomami } from "@oomami/sdk";
+
   const id = $derived(sessionIdSchema.parse(page.params.id));
 
   const session = $derived(useQuery(api.sessions.get, { id }));
   const auth = useAuth();
+  const oomami = new Oomami({
+    baseUrl: import.meta.env.VITE_CONVEX_SITE_URL,
+    authToken: () => auth.fetchAccessToken({ forceRefreshToken: true }),
+  });
 
   const events = $derived(useQuery(api.events.list, { sessionId: id }));
 
@@ -20,24 +26,11 @@
   async function submit() {
     if (!message) return;
     console.log(message);
-    const token = await auth.fetchAccessToken({ forceRefreshToken: true });
-    if (!token) return;
 
-    const fetched = fetch(
-      `${import.meta.env.VITE_CONVEX_SITE_URL}/api/events`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sessionId: id,
-          type: "user.message",
-          data: { role: "user", content: message },
-        }),
-      },
-    );
+    const fetched = oomami.sessions.events.create(id, {
+      type: "user.message",
+      data: { role: "user", content: message },
+    });
     message = "";
     const response = await fetched;
     const reader = response.body?.getReader();

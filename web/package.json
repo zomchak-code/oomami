@@ -12,6 +12,7 @@
 		"check": "bun svelte-check && bun lint"
 	},
 	"dependencies": {
+		"@oomami/sdk": "workspace:*",
 		"@mmailaender/convex-better-auth-svelte": "^0.7.3",
 		"@mmailaender/convex-svelte": "^0.18.0",
 		"conv": "workspace:*"
