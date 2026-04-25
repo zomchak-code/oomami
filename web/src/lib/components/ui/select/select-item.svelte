@@ -28,8 +28,6 @@
     <span class="absolute end-2 flex size-3.5 items-center justify-center">
       {#if selected}
         <CheckIcon class="cn-select-item-indicator-icon" />
-      {:else if value === "+"}
-        <Plus />
       {/if}
     </span>
     {#if childrenProp}

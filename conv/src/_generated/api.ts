@@ -9,9 +9,12 @@
  */
 
 import type * as agent from "../agent.js";
+import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
+import type * as events from "../events.js";
 import type * as faker from "../faker.js";
 import type * as http from "../http.js";
+import type * as sessions from "../sessions.js";
 
 import type {
   ApiFromModules,
@@ -22,9 +25,12 @@ import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
   agent: typeof agent;
+  agents: typeof agents;
   auth: typeof auth;
+  events: typeof events;
   faker: typeof faker;
   http: typeof http;
+  sessions: typeof sessions;
 }> = anyApi as any;
 
 /**

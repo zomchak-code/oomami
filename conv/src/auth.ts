@@ -5,8 +5,8 @@ import {
 } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { components, internal } from "./_generated/api";
-import { type DataModel } from "./_generated/dataModel";
-import { query } from "./_generated/server";
+import { type DataModel, type Id } from "./_generated/dataModel";
+import { query, type QueryCtx } from "./_generated/server";
 import authSchema from "./betterAuth/schema";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
 import authConfig from "./auth.config";
@@ -150,3 +150,73 @@ export const getApiKeys = query({
     return keys.page;
   },
 });
+
+export type Organization = Infer<
+  typeof authSchema.tables.organization.validator
+> & { _id: string };
+
+async function authedOrganization(ctx: QueryCtx, organization: Organization) {
+  const user = await authComponent.getAuthUser(ctx);
+  const membership = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: "member",
+    where: [
+      { field: "organizationId", value: organization._id },
+      { field: "userId", value: user._id },
+    ],
+  });
+  if (!membership) {
+    throw new ConvexError("Forbidden");
+  }
+  return organization;
+}
+
+export async function authedOrganizationBySlug(ctx: QueryCtx, slug: string) {
+  const organization: Organization = await ctx.runQuery(
+    components.betterAuth.adapter.findOne,
+    {
+      model: "organization",
+      where: [{ field: "slug", value: slug }],
+    },
+  );
+  if (!organization) {
+    throw new ConvexError("Organization not found");
+  }
+  return authedOrganization(ctx, organization);
+}
+
+export async function authedOrganizationById(ctx: QueryCtx, id: string) {
+  const organization: Organization = await ctx.runQuery(
+    components.betterAuth.adapter.findOne,
+    {
+      model: "organization",
+      where: [{ field: "_id", value: id }],
+    },
+  );
+  if (!organization) {
+    throw new ConvexError("Organization not found");
+  }
+  return authedOrganization(ctx, organization);
+}
+
+export async function authedOrganizationByAgentId(
+  ctx: QueryCtx,
+  agentId: Id<"agents">,
+) {
+  const agent = await ctx.db.get(agentId);
+
+  if (!agent) {
+    throw new ConvexError("Agent not found");
+  }
+  return authedOrganizationById(ctx, agent.organizationId);
+}
+
+export async function authedOrganizationBySessionId(
+  ctx: QueryCtx,
+  sessionId: Id<"sessions">,
+) {
+  const session = await ctx.db.get(sessionId);
+  if (!session) {
+    throw new ConvexError("Session not found");
+  }
+  return authedOrganizationByAgentId(ctx, session.agentId);
+}
