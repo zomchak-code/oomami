@@ -1,12 +1,21 @@
 # Oomami SDK
 
+## Install
+
+```sh
+npm install @oomami/sdk
+```
+
 ## API Key Auth
+
+Before using the SDK, sign up in the Oomami UI. From there, copy your
+organization ID and API key into `OOMAMI_ORGANIZATION_ID` and
+`OOMAMI_API_KEY`.
 
 ```ts
 import { Oomami } from "@oomami/sdk";
 
 const oomami = new Oomami({
-  baseUrl: "https://your-oomami-app.example",
   apiKey: process.env.OOMAMI_API_KEY!,
 });
 ```

@@ -34,12 +34,12 @@
       "name": "@oomami/sdk",
       "version": "0.0.0",
       "dependencies": {
-        "conv": "workspace:*",
         "eventsource-parser": "^3.0.8",
       },
       "peerDependencies": {
         "ai": "^6",
         "typescript": "^5",
+        "zod": "^4.1.8",
       },
     },
     "web": {

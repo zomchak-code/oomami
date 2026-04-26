@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe("Oomami", () => {
-  test("sends API key authenticated JSON requests", async () => {
+  test("sends API key authenticated JSON requests to the default base URL", async () => {
     const calls: FetchCall[] = [];
     mockFetch((input, init) => {
       calls.push({ url: String(input), init });
@@ -34,7 +34,6 @@ describe("Oomami", () => {
     });
 
     const oomami = new Oomami({
-      baseUrl: "https://app.example",
       apiKey: "key_123",
     });
 
@@ -46,7 +45,9 @@ describe("Oomami", () => {
 
     const call = only(calls);
     expect(agent._id).toBe("agent_123");
-    expect(call.url).toBe("https://app.example/api/v0/organizations/org_123/agents");
+    expect(call.url).toBe(
+      "https://sincere-cardinal-94.eu-west-1.convex.site/api/v0/organizations/org_123/agents",
+    );
     expect(call.init?.method).toBe("POST");
     expect(headerRecord(call.init)["x-api-key"]).toBe("key_123");
     expect(headerRecord(call.init)["Content-Type"]).toBe("application/json");

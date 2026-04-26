@@ -1,17 +1,40 @@
-import type { EventBody, PersistedEvent } from "conv/schema";
 import type { TextStreamPart, Tool, ToolSet } from "ai";
+import type { userModelMessageSchema } from "ai";
 import type { z } from "zod";
 
-export type CreateEvent = Extract<
-  EventBody,
-  { type: "user.message" } | { type: "agent.tool-result" }
->;
+export type JsonToolResultOutput = {
+  type: "json";
+  value: unknown;
+};
+export type ErrorJsonToolResultOutput = {
+  type: "error-json";
+  value: unknown;
+};
+export type ToolResultOutput = JsonToolResultOutput | ErrorJsonToolResultOutput;
+
+export type UserMessageEvent = {
+  type: "user.message";
+  data: z.infer<typeof userModelMessageSchema>;
+};
+export type AgentToolResultEvent = {
+  type: "agent.tool-result";
+  data: {
+    toolCallId: string;
+    toolName: string;
+    output: ToolResultOutput;
+  };
+};
+export type CreateEvent = UserMessageEvent | AgentToolResultEvent;
 export type CreateEvents = CreateEvent | CreateEvent[];
 export type AuthTokenProvider = () => string | null | Promise<string | null>;
 export type ToolErrorPayload = { message: string };
 export type OomamiStreamPart = TextStreamPart<ToolSet>;
 export type OomamiFullStream = ReadableStream<OomamiStreamPart> &
   AsyncIterable<OomamiStreamPart>;
+export type ServerToolDefinition = {
+  description?: string;
+  inputSchema: Record<string, unknown>;
+};
 
 export type Tools = Record<
   string,
@@ -29,7 +52,7 @@ export type ToModelError =
   | ((error: unknown) => ToolErrorPayload | string | unknown);
 
 type BaseOomamiOptions = {
-  baseUrl: string | URL;
+  baseUrl?: string | URL;
 };
 
 export type OomamiOptions = BaseOomamiOptions &
@@ -65,7 +88,35 @@ export type OomamiSessionWithAgent = OomamiSession & {
   agent: OomamiAgent;
 };
 
-export type OomamiEvent = PersistedEvent;
+export type OomamiEvent = {
+  _id: string;
+  _creationTime: number;
+  sessionId: string;
+} & (
+  | UserMessageEvent
+  | {
+      type: "agent.text";
+      data: {
+        text: string;
+      };
+    }
+  | {
+      type: "agent.reasoning";
+      data: {
+        text: string;
+        providerMetadata?: Record<string, unknown>;
+      };
+    }
+  | {
+      type: "agent.tool-call";
+      data: {
+        toolCallId: string;
+        toolName: string;
+        input: unknown;
+      };
+    }
+  | AgentToolResultEvent
+);
 
 export type ArchivedFilter = {
   archived?: boolean;

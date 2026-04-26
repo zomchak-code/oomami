@@ -1,4 +1,3 @@
-import type { ServerToolDefinition } from "conv/schema";
 import { OomamiApiError } from "./errors";
 import { executeToolCall, serializeToolDefinitions } from "./tools";
 import type {
@@ -16,6 +15,7 @@ import type {
   OomamiOptions,
   OomamiSessionWithAgent,
   OomamiStreamPart,
+  ServerToolDefinition,
   ToolCallPart,
   Tools,
   UpdateAgentRequest,
@@ -27,6 +27,9 @@ import {
   type EventSourceMessage,
 } from "eventsource-parser/stream";
 import type { StreamPart } from "./types";
+
+const DEFAULT_BASE_URL = "https://sincere-cardinal-94.eu-west-1.convex.site";
+
 export { OomamiApiError } from "./errors";
 export type {
   AuthTokenProvider,
@@ -102,7 +105,7 @@ export class Oomami {
       throw new Error("Provide either authToken or apiKey.");
     }
 
-    this.#baseUrl = options.baseUrl;
+    this.#baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.#credential = hasApiKey
       ? { type: "apiKey", apiKey: options.apiKey }
       : { type: "authToken", authToken: options.authToken };
