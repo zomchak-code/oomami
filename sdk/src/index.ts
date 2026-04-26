@@ -1,5 +1,5 @@
-import { OomamiApiError } from "./errors";
-import { executeToolCall, serializeToolDefinitions } from "./tools";
+import { OomamiApiError } from "./errors.js";
+import { executeToolCall, serializeToolDefinitions } from "./tools.js";
 import type {
   AuthTokenProvider,
   CreateAgentRequest,
@@ -20,17 +20,17 @@ import type {
   Tools,
   UpdateAgentRequest,
   UpdateSessionRequest,
-} from "./types";
+} from "./types.js";
 
 import {
   EventSourceParserStream,
   type EventSourceMessage,
 } from "eventsource-parser/stream";
-import type { StreamPart } from "./types";
+import type { StreamPart } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://sincere-cardinal-94.eu-west-1.convex.site";
 
-export { OomamiApiError } from "./errors";
+export { OomamiApiError } from "./errors.js";
 export type {
   AuthTokenProvider,
   ArchivedFilter,
@@ -52,7 +52,7 @@ export type {
   Tools,
   UpdateAgentRequest,
   UpdateSessionRequest,
-} from "./types";
+} from "./types.js";
 
 type Credential =
   | { type: "authToken"; authToken: AuthTokenProvider }

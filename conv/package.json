@@ -7,7 +7,7 @@
     "check": "bun compile && bun lint"
   },
   "dependencies": {
-    "@openrouter/ai-sdk-provider": "^2.8.0",
+    "@ai-sdk/google-vertex": "^4.0.112",
     "convex": "^1.35.1",
     "convex-helpers": "^0.1.115",
     "hono": "^4.10.7"

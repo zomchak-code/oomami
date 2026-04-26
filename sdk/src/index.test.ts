@@ -105,6 +105,12 @@ describe("Oomami", () => {
       "text-delta",
     ]);
     expect(requests[0]?.tools?.["getWeather"]).toBeDefined();
+  expect(requests[0]?.tools?.["getWeather"]?.inputSchema).toMatchObject({
+    type: "object",
+    properties: {
+      city: { type: "string" },
+    },
+  });
     expect(requests[1]?.events).toEqual([
       {
         type: "agent.tool-result",

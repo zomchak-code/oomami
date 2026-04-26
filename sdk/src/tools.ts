@@ -6,7 +6,7 @@ import type {
   ToolErrorPayload,
   ToolResultEvent,
   Tools,
-} from "./types";
+} from "./types.js";
 
 export async function executeToolCall(
   toolCall: ToolCallPart,
@@ -74,11 +74,13 @@ export function serializeToolDefinitions(tools: Tools | undefined) {
 
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
+      const inputSchema = zodSchema(definition.inputSchema);
+
       return [
         name,
         {
           description: definition.description,
-          inputSchema: zodSchema(definition.inputSchema),
+          inputSchema: inputSchema.jsonSchema as Record<string, unknown>,
         },
       ];
     }),

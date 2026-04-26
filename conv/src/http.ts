@@ -9,6 +9,7 @@ import {
 import type { ActionCtx } from "./_generated/server";
 import { model } from "./agent";
 import {
+  type JSONSchema7,
   jsonSchema,
   streamText,
   tool,
@@ -52,7 +53,7 @@ app.use(
   cors({
     origin: "*",
     allowHeaders: ["Authorization", "Content-Type", "x-api-key"],
-      allowMethods: ["GET", "PATCH", "POST", "OPTIONS"],
+    allowMethods: ["GET", "PATCH", "POST", "OPTIONS"],
   }),
 );
 
@@ -207,10 +208,24 @@ function toolsToToolSet(tools?: Record<string, ServerToolDefinition>) {
       name,
       tool({
         description: definition.description,
-        inputSchema: jsonSchema(definition.inputSchema),
+        inputSchema: jsonSchema(toolInputJsonSchema(definition.inputSchema)),
       }),
     ]),
   );
+}
+
+function toolInputJsonSchema(
+  inputSchema: ServerToolDefinition["inputSchema"],
+): JSONSchema7 {
+  if (isRecord(inputSchema.jsonSchema)) {
+    return inputSchema.jsonSchema as JSONSchema7;
+  }
+
+  return inputSchema as JSONSchema7;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isReadyToStream(history: PersistedEvent[]) {
@@ -223,7 +238,12 @@ function isReadyToStream(history: PersistedEvent[]) {
       toolResults.add(event.data.toolCallId);
     }
   }
-  return !toolCalls.difference(toolResults).size;
+  for (const toolCallId of toolCalls) {
+    if (!toolResults.has(toolCallId)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 async function persistPart(
@@ -373,10 +393,13 @@ app.post("/api/v0/organizations/:organizationId/sessions", async (c) =>
     const organizationId = c.req.param("organizationId");
     await authorizeOrganizationAccess(c.env, organizationId, c.req.raw.headers);
     const request = createSessionRequestSchema.parse(await c.req.json());
-    return c.env.runMutation(internal.sessions.createForAuthorizedOrganization, {
-      organizationId,
-      ...request,
-    });
+    return c.env.runMutation(
+      internal.sessions.createForAuthorizedOrganization,
+      {
+        organizationId,
+        ...request,
+      },
+    );
   }),
 );
 
