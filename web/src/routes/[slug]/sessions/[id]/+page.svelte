@@ -161,7 +161,7 @@
 </script>
 
 {#if session.data}
-  <div class="flex min-h-[calc(100vh-2rem)] flex-col gap-8">
+  <div class="flex h-[calc(100vh-2rem)] min-h-0 flex-col gap-8 overflow-hidden">
     <div class="flex items-start justify-between gap-4">
       <div class="flex items-center gap-3 min-w-0 flex-1">
         <MessageCircle class="size-8 shrink-0" />
@@ -247,7 +247,7 @@
       </div>
     </dl>
 
-    <div class="flex-1 space-y-4 pb-4">
+    <div class="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4 pr-2">
       {#if events.data}
         {#each events.data as event (event._id)}
           <div class="space-y-2 rounded-lg border p-3">
@@ -286,7 +286,7 @@
     </div>
 
     <form
-      class="sticky bottom-0 -mx-4 space-y-2 border-t bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/80"
+      class="-mx-4 space-y-2 border-t bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/80"
       onsubmit={(event) => {
         event.preventDefault();
         submit();

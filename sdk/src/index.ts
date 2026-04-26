@@ -29,6 +29,10 @@ export type {
   ToolErrorPayload,
 } from "./types";
 
+type Credential =
+  | { type: "authToken"; authToken: AuthTokenProvider }
+  | { type: "apiKey"; apiKey: string };
+
 export class Oomami {
   readonly sessions: {
     events: {
@@ -41,11 +45,18 @@ export class Oomami {
   };
 
   readonly #baseUrl: string | URL;
-  readonly #authToken: AuthTokenProvider;
+  readonly #credential: Credential;
 
   constructor(options: OomamiOptions) {
+    if (options.authToken !== undefined && options.apiKey !== undefined) {
+      throw new Error("Provide either authToken or apiKey, not both.");
+    }
+
     this.#baseUrl = options.baseUrl;
-    this.#authToken = options.authToken;
+    this.#credential =
+      options.apiKey !== undefined
+        ? { type: "apiKey", apiKey: options.apiKey }
+        : { type: "authToken", authToken: options.authToken };
     this.sessions = {
       events: {
         create: (sessionId, events, options) =>
@@ -120,13 +131,13 @@ export class Oomami {
     events: CreateEvent[],
     tools?: Record<string, ServerToolDefinition>,
   ) {
-    const token = await this.#authToken();
+    const authHeaders = await this.#authHeaders();
     const response = await fetch(
       this.#url(`/api/v0/sessions/${encodeURIComponent(sessionId)}/events`),
       {
         method: "POST",
         headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authHeaders,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -145,6 +156,16 @@ export class Oomami {
     }
 
     return createSseStream(response.body);
+  }
+
+  async #authHeaders(): Promise<Record<string, string>> {
+    if (this.#credential.type === "authToken") {
+      const token = await this.#credential.authToken();
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    const apiKey = this.#credential.apiKey.trim();
+    return apiKey ? { "x-api-key": apiKey } : {};
   }
 
   #url(path: string) {

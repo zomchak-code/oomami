@@ -7,6 +7,7 @@ import { convex } from "@convex-dev/better-auth/plugins";
 import { components, internal } from "./_generated/api";
 import { type DataModel, type Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
+import type { GenericActionCtx } from "convex/server";
 import authSchema from "./betterAuth/schema";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
 import authConfig from "./auth.config";
@@ -93,6 +94,144 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth(createAuthOptions(ctx));
 };
 
+type SessionOrganization = {
+  sessionId: Id<"sessions">;
+  agentId: Id<"agents">;
+  organizationId: string;
+};
+
+type VerifiedApiKey = {
+  id?: string;
+  _id?: string;
+  referenceId: string;
+};
+
+type VerifyApiKeyResult = {
+  valid: boolean;
+  error: { message: string; code: string } | null;
+  key: VerifiedApiKey | null;
+};
+
+type AuthWithApiKey = {
+  api: {
+    verifyApiKey(args: {
+      body: {
+        configId: "org";
+        key: string;
+      };
+    }): Promise<VerifyApiKeyResult>;
+  };
+};
+
+export type AuthPrincipal =
+  | { kind: "user"; userId: string }
+  | { kind: "apiKey"; apiKeyId: string; organizationId: string };
+
+export type AuthorizedSessionAccess = SessionOrganization & {
+  principal: AuthPrincipal;
+};
+
+export class HttpAuthError extends Error {
+  constructor(
+    readonly status: 401 | 403,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpAuthError";
+  }
+}
+
+export async function authorizeSessionAccess(
+  ctx: GenericActionCtx<DataModel>,
+  sessionId: Id<"sessions">,
+  headers: Headers,
+): Promise<AuthorizedSessionAccess> {
+  const apiKeyValue = headers.get("x-api-key")?.trim();
+
+  if (apiKeyValue) {
+    return authorizeApiKeySessionAccess(ctx, sessionId, apiKeyValue);
+  }
+
+  const user = await getAuthUserForHttp(ctx);
+  const sessionOrganization = await getSessionOrganization(ctx, sessionId);
+  const membership = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: "member",
+    where: [
+      { field: "organizationId", value: sessionOrganization.organizationId },
+      { field: "userId", value: user._id },
+    ],
+  });
+  if (!membership) {
+    throw new HttpAuthError(403, "Forbidden");
+  }
+
+  return {
+    ...sessionOrganization,
+    principal: { kind: "user", userId: user._id },
+  };
+}
+
+async function authorizeApiKeySessionAccess(
+  ctx: GenericActionCtx<DataModel>,
+  sessionId: Id<"sessions">,
+  apiKeyValue: string,
+): Promise<AuthorizedSessionAccess> {
+  const auth = createAuth(ctx) as unknown as AuthWithApiKey;
+  let result: VerifyApiKeyResult;
+  try {
+    result = await auth.api.verifyApiKey({
+      body: {
+        configId: "org",
+        key: apiKeyValue,
+      },
+    });
+  } catch {
+    throw new HttpAuthError(401, "Invalid API key");
+  }
+
+  if (!result.valid || !result.key) {
+    throw new HttpAuthError(401, result.error?.message ?? "Invalid API key");
+  }
+
+  const sessionOrganization = await getSessionOrganization(ctx, sessionId);
+  if (result.key.referenceId !== sessionOrganization.organizationId) {
+    throw new HttpAuthError(403, "Forbidden");
+  }
+
+  return {
+    ...sessionOrganization,
+    principal: {
+      kind: "apiKey",
+      apiKeyId: result.key._id ?? result.key.id ?? "",
+      organizationId: result.key.referenceId,
+    },
+  };
+}
+
+function getSessionOrganization(
+  ctx: GenericActionCtx<DataModel>,
+  sessionId: Id<"sessions">,
+) {
+  return ctx.runQuery(internal.sessions.getOrganizationIdForSession, {
+    id: sessionId,
+  });
+}
+
+async function getAuthUserForHttp(ctx: GenericActionCtx<DataModel>) {
+  try {
+    const user = await authComponent.getAuthUser(ctx);
+    if (!user) {
+      throw new HttpAuthError(401, "Unauthorized");
+    }
+    return user;
+  } catch (error) {
+    if (error instanceof HttpAuthError) {
+      throw error;
+    }
+    throw new HttpAuthError(401, "Unauthorized");
+  }
+}
+
 // Example function for getting the current user
 // Feel free to edit, omit, etc.
 export const getCurrentUser = query({
@@ -106,6 +245,8 @@ export const getCurrentUser = query({
 type ApiKey = Infer<typeof authSchema.tables.apikey.validator> & {
   _id: string;
 };
+
+type ListedApiKey = Omit<ApiKey, "key">;
 
 export const getApiKeys = query({
   args: {
@@ -147,7 +288,7 @@ export const getApiKeys = query({
         },
       },
     );
-    return keys.page;
+    return keys.page.map(({ key: _key, ...key }) => key satisfies ListedApiKey);
   },
 });
 

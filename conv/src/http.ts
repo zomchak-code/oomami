@@ -1,4 +1,9 @@
-import { authComponent, createAuth } from "./auth";
+import {
+  authComponent,
+  authorizeSessionAccess,
+  createAuth,
+  HttpAuthError,
+} from "./auth";
 import type { ActionCtx } from "./_generated/server";
 import { model } from "./agent";
 import {
@@ -20,8 +25,11 @@ import {
   type PersistedEvent,
   type ServerToolDefinition,
 } from "./schema";
-import { api } from "./_generated/api";
-import { createEvent, updateEvent } from "./events";
+import {
+  createAuthorizedEvent,
+  listAuthorizedEvents,
+  updateAuthorizedEvent,
+} from "./events";
 import {
   Hono,
   HttpRouterWithHono,
@@ -37,7 +45,7 @@ app.use(
   "/api/v0/*",
   cors({
     origin: "*",
-    allowHeaders: ["Authorization", "Content-Type"],
+    allowHeaders: ["Authorization", "Content-Type", "x-api-key"],
     allowMethods: ["POST", "OPTIONS"],
   }),
 );
@@ -152,7 +160,7 @@ async function persistPart(
   map: Record<string, { id: Id<"events">; text: string }>,
 ) {
   if (part.type === "text-start") {
-    const id = await createEvent(ctx, {
+    const id = await createAuthorizedEvent(ctx, {
       sessionId,
       type: "agent.text",
       data: {
@@ -167,7 +175,7 @@ async function persistPart(
   } else if (part.type === "text-end") {
     const mapped = map[part.id];
     if (!mapped) return;
-    await updateEvent(ctx, mapped.id, {
+    await updateAuthorizedEvent(ctx, mapped.id, {
       sessionId,
       type: "agent.text",
       data: {
@@ -175,7 +183,7 @@ async function persistPart(
       },
     });
   } else if (part.type === "reasoning-start") {
-    const id = await createEvent(ctx, {
+    const id = await createAuthorizedEvent(ctx, {
       sessionId,
       type: "agent.reasoning",
       data: {
@@ -190,7 +198,7 @@ async function persistPart(
   } else if (part.type === "reasoning-end") {
     const mapped = map[part.id];
     if (!mapped) return;
-    await updateEvent(ctx, mapped.id, {
+    await updateAuthorizedEvent(ctx, mapped.id, {
       sessionId,
       type: "agent.reasoning",
       data: {
@@ -199,7 +207,7 @@ async function persistPart(
     });
   } else if (part.type === "tool-call") {
     // need to make sure we persist tool call before returning it to the client
-    await createEvent(ctx, {
+    await createAuthorizedEvent(ctx, {
       sessionId,
       type: "agent.tool-call",
       data: {
@@ -213,6 +221,15 @@ async function persistPart(
 
 app.post("/api/v0/sessions/:sessionId/events", async (c) => {
   const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+  try {
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+  } catch (error) {
+    if (error instanceof HttpAuthError) {
+      return c.text(error.message, error.status);
+    }
+    throw error;
+  }
+
   const json = await c.req.json();
   const request = createEventsRequestSchema.parse(json);
 
@@ -221,12 +238,10 @@ app.post("/api/v0/sessions/:sessionId/events", async (c) => {
       sessionId,
       ...body,
     });
-    await createEvent(c.env, event);
+    await createAuthorizedEvent(c.env, event);
   }
 
-  const events = await c.env.runQuery(api.events.list, {
-    sessionId,
-  });
+  const events = await listAuthorizedEvents(c.env, sessionId);
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({

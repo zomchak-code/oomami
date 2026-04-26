@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import {
   authedOrganizationByAgentId,
@@ -88,6 +88,27 @@ export const get = query({
     return {
       ...session,
       agent,
+    };
+  },
+});
+
+export const getOrganizationIdForSession = internalQuery({
+  args: {
+    id: v.id("sessions"),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      throw new ConvexError("Session not found");
+    }
+    const agent = await ctx.db.get(session.agentId);
+    if (!agent) {
+      throw new ConvexError("Agent not found");
+    }
+    return {
+      sessionId: session._id,
+      agentId: agent._id,
+      organizationId: agent.organizationId,
     };
   },
 });

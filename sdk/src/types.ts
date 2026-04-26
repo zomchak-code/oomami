@@ -25,10 +25,21 @@ export type ToModelError =
   | undefined
   | ((error: unknown) => ToolErrorPayload | string | unknown);
 
-export type OomamiOptions = {
+type BaseOomamiOptions = {
   baseUrl: string | URL;
-  authToken: AuthTokenProvider;
 };
+
+export type OomamiOptions = BaseOomamiOptions &
+  (
+    | {
+        authToken: AuthTokenProvider;
+        apiKey?: never;
+      }
+    | {
+        apiKey: string;
+        authToken?: never;
+      }
+  );
 
 export type StreamPart = OomamiStreamPart & {
   type: string;

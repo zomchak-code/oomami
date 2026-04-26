@@ -34,6 +34,7 @@
   });
 
   const keys = $derived(useQuery(api.auth.getApiKeys, { slug }));
+  let createdApiKey = $state<string | null>(null);
 
   async function deleteOrganization() {
     if (!confirm("Are you sure you want to delete this organization?")) return;
@@ -42,6 +43,23 @@
     });
     $organizations.refetch();
     goto(resolve(`/`));
+  }
+
+  async function createApiKey() {
+    const { data, error } = await authClient.apiKey.create({
+      configId: "org",
+      name: fakeName(),
+      organizationId: currentOrganization!.id,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (data?.key) {
+      createdApiKey = data.key;
+      await navigator.clipboard.writeText(data.key);
+    }
   }
 </script>
 
@@ -62,6 +80,27 @@
 
     <p>API keys</p>
     {#if keys.data}
+      {#if createdApiKey}
+        <Item.Root variant="outline">
+          <Item.Media>
+            <Key />
+          </Item.Media>
+          <Item.Content>
+            <Item.Title>New API key copied</Item.Title>
+            <Item.Description>
+              Save this key now. It will not be shown again.
+            </Item.Description>
+          </Item.Content>
+          <Item.Actions>
+            <Button
+              variant="outline"
+              onclick={() => navigator.clipboard.writeText(createdApiKey!)}
+            >
+              <Copy /> Copy again
+            </Button>
+          </Item.Actions>
+        </Item.Root>
+      {/if}
       <div class="flex gap-2 flex-wrap">
         {#each keys.data as key (key._id)}
           <div class="flex-1">
@@ -94,13 +133,6 @@
                 <Button
                   variant="outline"
                   onclick={() =>
-                    navigator.clipboard.writeText(key.prefix + key.key)}
-                >
-                  <Copy /> Copy
-                </Button>
-                <Button
-                  variant="outline"
-                  onclick={() =>
                     authClient.apiKey.delete({
                       configId: "org",
                       keyId: key._id,
@@ -116,12 +148,7 @@
           <Item.Root
             class="h-full justify-center border-dashed hover:bg-muted"
             variant="outline"
-            onclick={() =>
-              authClient.apiKey.create({
-                configId: "org",
-                name: fakeName(),
-                organizationId: currentOrganization!.id,
-              })}
+            onclick={createApiKey}
           >
             <Plus />
             <span>New key</span>
