@@ -68,7 +68,12 @@ export class Oomami {
 
     const readableStream = new ReadableStream<OomamiStreamPart>({
       start: async (controller) => {
-        await this.readStream(sessionId, stream, controller, options.tools);
+        try {
+          await this.readStream(sessionId, stream, controller, options.tools);
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        }
       },
     });
     return attachAsyncIterable(readableStream);

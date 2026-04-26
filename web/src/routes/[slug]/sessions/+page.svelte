@@ -85,12 +85,12 @@
           </Button>
         {/snippet}
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content>
+      <DropdownMenu.Content class="min-w-56">
         {#if agents.data?.length}
           {#each agents.data as agent (agent._id)}
             <DropdownMenu.Item onclick={() => create(agent._id)}>
               <Bot />
-              {agent.name}
+              <span class="truncate">{agent.name}</span>
             </DropdownMenu.Item>
           {/each}
         {:else}
@@ -115,12 +115,12 @@
                 </Button>
               {/snippet}
             </DropdownMenu.Trigger>
-            <DropdownMenu.Content>
+            <DropdownMenu.Content class="min-w-56">
               {#if agents.data?.length}
                 {#each agents.data as agent (agent._id)}
                   <DropdownMenu.Item onclick={() => create(agent._id)}>
                     <Bot />
-                    {agent.name}
+                    <span class="truncate">{agent.name}</span>
                   </DropdownMenu.Item>
                 {/each}
               {:else}

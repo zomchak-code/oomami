@@ -2,11 +2,13 @@
   import { api } from "conv/api";
   import { useConvexClient, useQuery } from "convex-svelte";
   import { page } from "$app/state";
+  import { resolve } from "$app/paths";
   import Bot from "@lucide/svelte/icons/bot";
   import Copy from "@lucide/svelte/icons/copy";
   import Check from "@lucide/svelte/icons/check";
   import Archive from "@lucide/svelte/icons/archive";
   import ArchiveRestore from "@lucide/svelte/icons/archive-restore";
+  import Send from "@lucide/svelte/icons/send";
   import { sessionIdSchema } from "conv/schema";
   import MessageCircle from "@lucide/svelte/icons/message-circle";
   import { Textarea } from "$lib/components/ui/textarea";
@@ -18,6 +20,7 @@
   import { formatRelative } from "$lib/utils";
 
   const convex = useConvexClient();
+  const slug = $derived(z.string().parse(page.params.slug));
   const id = $derived(sessionIdSchema.parse(page.params.id));
 
   const session = $derived(useQuery(api.sessions.get, { id }));
@@ -29,6 +32,18 @@
   });
 
   const events = $derived(useQuery(api.events.list, { sessionId: id }));
+  let message = $state("");
+  let sending = $state(false);
+  let sendError = $state<string | null>(null);
+  const canSend = $derived(message.trim().length > 0 && !archived && !sending);
+
+  let eventsEnd: HTMLDivElement | null = $state(null);
+
+  $effect(() => {
+    const currentEvents = events.data;
+    if (!currentEvents) return;
+    queueMicrotask(() => eventsEnd?.scrollIntoView({ block: "end" }));
+  });
 
   let copied = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -103,45 +118,50 @@
     }
   }
 
-  let message = $state("");
-
   async function submit() {
-    if (!message || archived) return;
+    if (!canSend) return;
+    const content = message.trim();
+    message = "";
+    sending = true;
+    sendError = null;
 
-    const fetched = oomami.sessions.events.create(
-      id,
-      {
-        type: "user.message",
-        data: { role: "user", content: message },
-      },
-      {
-        tools: {
-          getWeather: {
-            inputSchema: z.object({
-              city: z.string(),
-            }),
-            execute: async (input) => {
-              return `The weather in ${input.city} is sunny.`;
+    try {
+      const stream = await oomami.sessions.events.create(
+        id,
+        {
+          type: "user.message",
+          data: { role: "user", content },
+        },
+        {
+          tools: {
+            getWeather: {
+              inputSchema: z.object({
+                city: z.string(),
+              }),
+              execute: async (input) => {
+                return `The weather in ${input.city} is sunny.`;
+              },
             },
           },
         },
-      },
-    );
-    message = "";
-    const response = await fetched;
-    const reader = response.getReader();
-    while (true) {
-      const result = await reader?.read();
-      if (!result) break;
-      const { done, value } = result;
-      if (done) break;
-      console.log(value);
+      );
+      const reader = stream.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    } catch (error) {
+      sendError =
+        error instanceof Error ? error.message : "Failed to send message";
+      message = content;
+    } finally {
+      sending = false;
     }
   }
 </script>
 
 {#if session.data}
-  <div class="space-y-8">
+  <div class="flex min-h-[calc(100vh-2rem)] flex-col gap-8">
     <div class="flex items-start justify-between gap-4">
       <div class="flex items-center gap-3 min-w-0 flex-1">
         <MessageCircle class="size-8 shrink-0" />
@@ -206,9 +226,15 @@
         <dt class="text-xs uppercase tracking-wide text-muted-foreground">
           Agent
         </dt>
-        <dd class="inline-flex items-center gap-2 text-sm">
-          <Bot class="size-4" />
-          {session.data.agent.name}
+        <dd>
+          <Button
+            href={resolve(`/${slug}/agents/${session.data.agent._id}`)}
+            variant="ghost"
+            class="-ml-2 h-auto justify-start px-2 py-1"
+          >
+            <Bot class="size-4" />
+            {session.data.agent.name}
+          </Button>
         </dd>
       </div>
       <div class="space-y-1">
@@ -221,49 +247,85 @@
       </div>
     </dl>
 
-    <div class="space-y-4">
+    <div class="flex-1 space-y-4 pb-4">
       {#if events.data}
         {#each events.data as event (event._id)}
-          <div>
-            <Badge>{event.type}</Badge>
+          <div class="space-y-2 rounded-lg border p-3">
+            <div>
+              <Badge>{event.type}</Badge>
+            </div>
             {#if event.type === "user.message"}
-              <div>
-                <Badge variant="secondary">text</Badge>
-                {event.data.content}
-              </div>
+              <p class="whitespace-pre-wrap">{event.data.content}</p>
             {:else if event.type === "agent.text" || event.type === "agent.reasoning"}
-              <p>{event.data.text}</p>
+              {#if event.data.text}
+                <p class="whitespace-pre-wrap">{event.data.text}</p>
+              {:else}
+                <p class="animate-pulse text-sm italic text-muted-foreground">
+                  {event.type === "agent.reasoning"
+                    ? "Thinking..."
+                    : "Writing..."}
+                </p>
+              {/if}
             {:else if event.type === "agent.tool-call"}
               <Badge variant="secondary">{event.data.toolName}</Badge>
-              <p>{JSON.stringify(event.data.input)}</p>
+              <p class="wrap-break-word font-mono text-xs">
+                {JSON.stringify(event.data.input)}
+              </p>
             {:else if event.type === "agent.tool-result"}
               <Badge variant="secondary">{event.data.toolName}</Badge>
-              <p>{JSON.stringify(event.data.output.value)}</p>
+              <p class="wrap-break-word font-mono text-xs">
+                {JSON.stringify(event.data.output.value)}
+              </p>
             {:else}
               {JSON.stringify(event)}
             {/if}
           </div>
         {/each}
       {/if}
+      <div bind:this={eventsEnd}></div>
     </div>
 
-    <div class="space-y-2">
+    <form
+      class="sticky bottom-0 -mx-4 space-y-2 border-t bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/80"
+      onsubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
       {#if archived}
         <p class="text-sm text-muted-foreground">
           Restore this session to send new messages.
         </p>
       {/if}
-      <Textarea
-        bind:value={message}
-        disabled={archived}
-        placeholder={archived ? "Archived sessions are read-only" : undefined}
-        onkeydown={(e: KeyboardEvent) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-      />
-    </div>
+      {#if sendError}
+        <p class="text-sm text-destructive">{sendError}</p>
+      {/if}
+      <div
+        class="flex flex-col gap-2 rounded-lg border bg-background p-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
+      >
+        <Textarea
+          bind:value={message}
+          disabled={archived || sending}
+          placeholder={archived
+            ? "Archived sessions are read-only"
+            : sending
+              ? "Waiting for response..."
+              : "Send a message..."}
+          class="max-h-40 min-h-10 resize-none border-0 bg-transparent p-0 shadow-none focus-visible:border-0 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 dark:bg-transparent dark:disabled:bg-transparent"
+          onkeydown={(e: KeyboardEvent) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <div class="flex items-center justify-end">
+          <Button type="submit" size="sm" disabled={!canSend}>
+            <Send />
+            {sending ? "Sending..." : "Send"}
+          </Button>
+        </div>
+      </div>
+    </form>
   </div>
 {/if}
