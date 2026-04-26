@@ -45,95 +45,97 @@
   }
 </script>
 
-{#if currentOrganization}
-  <p>Rename</p>
-  <Input
-    type="text"
-    value={currentOrganization.name}
-    onblur={(e: FocusEvent) =>
-      authClient.organization.update({
-        organizationId: currentOrganization!.id,
-        data: {
-          name: (e.target as HTMLInputElement).value,
-        },
-      })}
-  />
+<div class="space-y-4">
+  {#if currentOrganization}
+    <p>Rename organization</p>
+    <Input
+      type="text"
+      value={currentOrganization.name}
+      onblur={(e: FocusEvent) =>
+        authClient.organization.update({
+          organizationId: currentOrganization!.id,
+          data: {
+            name: (e.target as HTMLInputElement).value,
+          },
+        })}
+    />
 
-  <p>Keys</p>
-  {#if keys.data}
-    <div class="flex gap-2 flex-wrap">
-      {#each keys.data as key (key._id)}
-        <div class="flex-1">
-          <Item.Root variant="muted" class="h-full">
-            <Item.Media>
-              <Key />
-            </Item.Media>
-            <Item.Content>
-              <Item.Title>
-                <Input
-                  type="text"
-                  class="px-0 bg-transparent border-none focus-visible:ring-0"
-                  style={`width: ${key.name?.length ?? 0 + 1}ch;`}
-                  value={key.name}
-                  oninput={(e) => {
-                    const target = e.target as HTMLInputElement;
-                    target.style.width = "1px";
-                    target.style.width = target.scrollWidth + "px";
-                  }}
-                  onblur={(e: FocusEvent) =>
-                    authClient.apiKey.update({
+    <p>API keys</p>
+    {#if keys.data}
+      <div class="flex gap-2 flex-wrap">
+        {#each keys.data as key (key._id)}
+          <div class="flex-1">
+            <Item.Root variant="muted" class="h-full">
+              <Item.Media>
+                <Key />
+              </Item.Media>
+              <Item.Content>
+                <Item.Title>
+                  <Input
+                    type="text"
+                    class="px-0 bg-transparent border-none focus-visible:ring-0"
+                    style={`width: ${key.name?.length ?? 0 + 1}ch;`}
+                    value={key.name}
+                    oninput={(e) => {
+                      const target = e.target as HTMLInputElement;
+                      target.style.width = "1px";
+                      target.style.width = target.scrollWidth + "px";
+                    }}
+                    onblur={(e: FocusEvent) =>
+                      authClient.apiKey.update({
+                        configId: "org",
+                        keyId: key._id,
+                        name: (e.target as HTMLInputElement).value,
+                      })}
+                  />
+                </Item.Title>
+              </Item.Content>
+              <Item.Actions>
+                <Button
+                  variant="outline"
+                  onclick={() =>
+                    navigator.clipboard.writeText(key.prefix + key.key)}
+                >
+                  <Copy /> Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  onclick={() =>
+                    authClient.apiKey.delete({
                       configId: "org",
                       keyId: key._id,
-                      name: (e.target as HTMLInputElement).value,
                     })}
-                />
-              </Item.Title>
-            </Item.Content>
-            <Item.Actions>
-              <Button
-                variant="outline"
-                onclick={() =>
-                  navigator.clipboard.writeText(key.prefix + key.key)}
-              >
-                <Copy /> Copy
-              </Button>
-              <Button
-                variant="outline"
-                onclick={() =>
-                  authClient.apiKey.delete({
-                    configId: "org",
-                    keyId: key._id,
-                  })}
-              >
-                <Trash /> Delete
-              </Button>
-            </Item.Actions>
+                >
+                  <Trash /> Delete
+                </Button>
+              </Item.Actions>
+            </Item.Root>
+          </div>
+        {/each}
+        <div class="flex-1">
+          <Item.Root
+            class="h-full justify-center border-dashed hover:bg-muted"
+            variant="outline"
+            onclick={() =>
+              authClient.apiKey.create({
+                configId: "org",
+                name: fakeName(),
+                organizationId: currentOrganization!.id,
+              })}
+          >
+            <Plus />
+            <span>New key</span>
           </Item.Root>
         </div>
-      {/each}
-      <div class="flex-1">
-        <Item.Root
-          class="h-full justify-center border-dashed hover:bg-muted"
-          variant="outline"
-          onclick={() =>
-            authClient.apiKey.create({
-              configId: "org",
-              name: fakeName(),
-              organizationId: currentOrganization!.id,
-            })}
-        >
-          <Plus />
-          <span>New key</span>
-        </Item.Root>
       </div>
-    </div>
-    <p>Delete</p>
-    <Button
-      variant="outline"
-      onclick={deleteOrganization}
-      class="hover:text-destructive"
-    >
-      <Flame /> Delete organization
-    </Button>
+      <p>Delete organization</p>
+      <Button
+        variant="outline"
+        onclick={deleteOrganization}
+        class="hover:text-destructive"
+      >
+        <Flame /> Delete organization
+      </Button>
+    {/if}
   {/if}
-{/if}
+</div>

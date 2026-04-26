@@ -12,6 +12,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Bot from "@lucide/svelte/icons/bot";
   import MessageCircle from "@lucide/svelte/icons/message-circle";
+  import Settings from "@lucide/svelte/icons/settings";
 
   const slug = $derived(z.string().parse(page.params.slug));
 
@@ -105,6 +106,18 @@
                 <a href={resolve(`/${slug}/sessions`)} {...props}>
                   <MessageCircle />
                   <span>Sessions</span>
+                </a>
+              {/snippet}
+            </Sidebar.MenuButton>
+          </Sidebar.MenuItem>
+          <Sidebar.MenuItem>
+            <Sidebar.MenuButton
+              isActive={page.url.pathname === resolve(`/${slug}/settings`)}
+            >
+              {#snippet child({ props })}
+                <a href={resolve(`/${slug}/settings`)} {...props}>
+                  <Settings />
+                  <span>Settings</span>
                 </a>
               {/snippet}
             </Sidebar.MenuButton>
