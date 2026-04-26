@@ -1,4 +1,4 @@
-import { zodSchema, type ToolSet } from "ai";
+import { zodSchema } from "ai";
 import type {
   StreamPart,
   ToModelError,
@@ -10,7 +10,7 @@ import type {
 
 export async function executeToolCall(
   toolCall: ToolCallPart,
-  tools: ToolSet | undefined,
+  tools: Tools | undefined,
   toModelError: ToModelError,
 ): Promise<{ event: ToolResultEvent; streamPart: StreamPart }> {
   const localTool = tools?.[toolCall.toolName] as

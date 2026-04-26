@@ -126,7 +126,7 @@
     sendError = null;
 
     try {
-      const stream = await oomami.sessions.events.create(
+      const stream = await oomami.sessions.events.send(
         id,
         {
           type: "user.message",

@@ -1,4 +1,6 @@
 import {
+  authorizeAgentAccess,
+  authorizeOrganizationAccess,
   authComponent,
   authorizeSessionAccess,
   createAuth,
@@ -18,6 +20,7 @@ import {
   type ToolSet,
 } from "ai";
 import {
+  agentIdSchema,
   createEventsRequestSchema,
   eventSchema,
   sessionIdSchema,
@@ -38,6 +41,9 @@ import {
 import { cors } from "hono/cors";
 import type { DataModel, Id } from "./_generated/dataModel";
 import type { GenericActionCtx } from "convex/server";
+import { internal } from "../api";
+import { ConvexError } from "convex/values";
+import z from "zod";
 
 const app: HonoWithConvex<ActionCtx> = new Hono();
 
@@ -46,13 +52,80 @@ app.use(
   cors({
     origin: "*",
     allowHeaders: ["Authorization", "Content-Type", "x-api-key"],
-    allowMethods: ["POST", "OPTIONS"],
+      allowMethods: ["GET", "PATCH", "POST", "OPTIONS"],
   }),
 );
 
-app.notFound((c) => {
-  return c.text("Not found", 404);
+app.notFound(() => {
+  return jsonError("Not found", 404);
 });
+
+const createAgentRequestSchema = z.object({
+  name: z.string().optional(),
+  systemPrompt: z.string().optional(),
+});
+
+const updateAgentRequestSchema = z.object({
+  name: z.string().optional(),
+  systemPrompt: z.string().optional(),
+});
+
+const createSessionRequestSchema = z.object({
+  agentId: agentIdSchema,
+  name: z.string().optional(),
+});
+
+const updateSessionRequestSchema = z.object({
+  name: z.string(),
+});
+
+function jsonError(message: string, status: number) {
+  return new Response(JSON.stringify({ error: { message } }), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+function errorResponse(error: unknown) {
+  if (error instanceof HttpAuthError) {
+    return jsonError(error.message, error.status);
+  }
+
+  if (error instanceof z.ZodError) {
+    return jsonError(z.prettifyError(error), 400);
+  }
+
+  if (error instanceof ConvexError) {
+    const message = String(error.data ?? error.message);
+    return jsonError(
+      message,
+      message.toLowerCase().includes("not found") ? 404 : 400,
+    );
+  }
+
+  if (error instanceof Error) {
+    return jsonError(error.message, 400);
+  }
+
+  return jsonError("Internal server error", 500);
+}
+
+async function jsonRoute(operation: () => Promise<unknown>) {
+  try {
+    return Response.json(await operation());
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+function archivedQuery(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error("archived must be true or false");
+}
 
 type ReasoningPart = {
   type: "reasoning";
@@ -219,29 +292,169 @@ async function persistPart(
   }
 }
 
-app.post("/api/v0/sessions/:sessionId/events", async (c) => {
-  const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
-  try {
-    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
-  } catch (error) {
-    if (error instanceof HttpAuthError) {
-      return c.text(error.message, error.status);
-    }
-    throw error;
-  }
-
-  const json = await c.req.json();
-  const request = createEventsRequestSchema.parse(json);
-
-  for (const body of request.events) {
-    const event = eventSchema.parse({
-      sessionId,
-      ...body,
+app.get("/api/v0/organizations/:organizationId/agents", async (c) =>
+  jsonRoute(async () => {
+    const organizationId = c.req.param("organizationId");
+    await authorizeOrganizationAccess(c.env, organizationId, c.req.raw.headers);
+    return c.env.runQuery(internal.agents.listForAuthorizedOrganization, {
+      organizationId,
+      archived: archivedQuery(c.req.query("archived")),
     });
-    await createAuthorizedEvent(c.env, event);
+  }),
+);
+
+app.post("/api/v0/organizations/:organizationId/agents", async (c) =>
+  jsonRoute(async () => {
+    const organizationId = c.req.param("organizationId");
+    await authorizeOrganizationAccess(c.env, organizationId, c.req.raw.headers);
+    const request = createAgentRequestSchema.parse(await c.req.json());
+    return c.env.runMutation(internal.agents.createForAuthorizedOrganization, {
+      organizationId,
+      ...request,
+    });
+  }),
+);
+
+app.get("/api/v0/agents/:agentId", async (c) =>
+  jsonRoute(async () => {
+    const agentId = agentIdSchema.parse(c.req.param("agentId"));
+    await authorizeAgentAccess(c.env, agentId, c.req.raw.headers);
+    return c.env.runQuery(internal.agents.getForAuthorizedAgent, {
+      id: agentId,
+    });
+  }),
+);
+
+app.patch("/api/v0/agents/:agentId", async (c) =>
+  jsonRoute(async () => {
+    const agentId = agentIdSchema.parse(c.req.param("agentId"));
+    await authorizeAgentAccess(c.env, agentId, c.req.raw.headers);
+    const request = updateAgentRequestSchema.parse(await c.req.json());
+    return c.env.runMutation(internal.agents.updateForAuthorizedAgent, {
+      id: agentId,
+      ...request,
+    });
+  }),
+);
+
+app.post("/api/v0/agents/:agentId/archive", async (c) =>
+  jsonRoute(async () => {
+    const agentId = agentIdSchema.parse(c.req.param("agentId"));
+    await authorizeAgentAccess(c.env, agentId, c.req.raw.headers);
+    return c.env.runMutation(internal.agents.archiveForAuthorizedAgent, {
+      id: agentId,
+    });
+  }),
+);
+
+app.post("/api/v0/agents/:agentId/restore", async (c) =>
+  jsonRoute(async () => {
+    const agentId = agentIdSchema.parse(c.req.param("agentId"));
+    await authorizeAgentAccess(c.env, agentId, c.req.raw.headers);
+    return c.env.runMutation(internal.agents.restoreForAuthorizedAgent, {
+      id: agentId,
+    });
+  }),
+);
+
+app.get("/api/v0/organizations/:organizationId/sessions", async (c) =>
+  jsonRoute(async () => {
+    const organizationId = c.req.param("organizationId");
+    await authorizeOrganizationAccess(c.env, organizationId, c.req.raw.headers);
+    return c.env.runQuery(internal.sessions.listForAuthorizedOrganization, {
+      organizationId,
+      archived: archivedQuery(c.req.query("archived")),
+    });
+  }),
+);
+
+app.post("/api/v0/organizations/:organizationId/sessions", async (c) =>
+  jsonRoute(async () => {
+    const organizationId = c.req.param("organizationId");
+    await authorizeOrganizationAccess(c.env, organizationId, c.req.raw.headers);
+    const request = createSessionRequestSchema.parse(await c.req.json());
+    return c.env.runMutation(internal.sessions.createForAuthorizedOrganization, {
+      organizationId,
+      ...request,
+    });
+  }),
+);
+
+app.get("/api/v0/sessions/:sessionId", async (c) =>
+  jsonRoute(async () => {
+    const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+    return c.env.runQuery(internal.sessions.getForAuthorizedSession, {
+      id: sessionId,
+    });
+  }),
+);
+
+app.patch("/api/v0/sessions/:sessionId", async (c) =>
+  jsonRoute(async () => {
+    const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+    const request = updateSessionRequestSchema.parse(await c.req.json());
+    return c.env.runMutation(internal.sessions.updateForAuthorizedSession, {
+      id: sessionId,
+      ...request,
+    });
+  }),
+);
+
+app.post("/api/v0/sessions/:sessionId/archive", async (c) =>
+  jsonRoute(async () => {
+    const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+    return c.env.runMutation(internal.sessions.archiveForAuthorizedSession, {
+      id: sessionId,
+    });
+  }),
+);
+
+app.post("/api/v0/sessions/:sessionId/restore", async (c) =>
+  jsonRoute(async () => {
+    const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+    return c.env.runMutation(internal.sessions.restoreForAuthorizedSession, {
+      id: sessionId,
+    });
+  }),
+);
+
+app.get("/api/v0/sessions/:sessionId/events", async (c) =>
+  jsonRoute(async () => {
+    const sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+    return listAuthorizedEvents(c.env, sessionId);
+  }),
+);
+
+app.post("/api/v0/sessions/:sessionId/events", async (c) => {
+  let sessionId: Id<"sessions">;
+  let request: z.infer<typeof createEventsRequestSchema>;
+  try {
+    sessionId = sessionIdSchema.parse(c.req.param("sessionId"));
+    await authorizeSessionAccess(c.env, sessionId, c.req.raw.headers);
+    request = createEventsRequestSchema.parse(await c.req.json());
+  } catch (error) {
+    return errorResponse(error);
   }
 
-  const events = await listAuthorizedEvents(c.env, sessionId);
+  let events: PersistedEvent[];
+  try {
+    for (const body of request.events) {
+      const event = eventSchema.parse({
+        sessionId,
+        ...body,
+      });
+      await createAuthorizedEvent(c.env, event);
+    }
+
+    events = await listAuthorizedEvents(c.env, sessionId);
+  } catch (error) {
+    return errorResponse(error);
+  }
 
   const encoder = new TextEncoder();
   const body = new ReadableStream({

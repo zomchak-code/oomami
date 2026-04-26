@@ -4,6 +4,9 @@
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { fakeName } from "$lib/faker";
+  import { api } from "conv/api";
+  import { useQuery } from "convex-svelte";
+  import { useAuth } from "@mmailaender/convex-better-auth-svelte/svelte";
   import z from "zod";
   import { page } from "$app/state";
   import Building from "@lucide/svelte/icons/building";
@@ -13,15 +16,24 @@
   import Bot from "@lucide/svelte/icons/bot";
   import MessageCircle from "@lucide/svelte/icons/message-circle";
   import Settings from "@lucide/svelte/icons/settings";
+  import LogOut from "@lucide/svelte/icons/log-out";
 
   const slug = $derived(z.string().parse(page.params.slug));
+  const auth = useAuth();
 
   const organizations = authClient.useListOrganizations();
   $organizations.refetch();
+  const currentUser = useQuery(api.auth.getCurrentUser, () =>
+    auth.isAuthenticated ? {} : "skip",
+  );
 
   const currentOrganization = $derived(
     $organizations.data?.find((o) => o.slug === slug),
   );
+  const signOutLabel = $derived(
+    currentUser.data?.isAnonymous ? "Leave guest session" : "Log out",
+  );
+  const userName = $derived(currentUser.data?.name ?? "Guest");
 
   async function newOrganization() {
     const name = fakeName();
@@ -31,6 +43,11 @@
     });
     $organizations.refetch();
     goto(resolve(`/${name}`));
+  }
+
+  async function signOut() {
+    await authClient.signOut();
+    goto(resolve("/auth"));
   }
 </script>
 
@@ -126,4 +143,19 @@
       </Sidebar.GroupContent>
     </Sidebar.Group>
   </Sidebar.Content>
+  <Sidebar.Footer>
+    <Sidebar.Menu>
+      <Sidebar.MenuItem>
+        <Sidebar.MenuButton onclick={signOut} class="h-auto">
+          <LogOut />
+          <span class="flex min-w-0 flex-col items-start">
+            <span>{signOutLabel}</span>
+            <span class="max-w-full truncate text-xs text-muted-foreground">
+              {userName}
+            </span>
+          </span>
+        </Sidebar.MenuButton>
+      </Sidebar.MenuItem>
+    </Sidebar.Menu>
+  </Sidebar.Footer>
 </Sidebar.Root>

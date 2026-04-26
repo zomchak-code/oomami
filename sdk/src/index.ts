@@ -1,15 +1,25 @@
 import type { ServerToolDefinition } from "conv/schema";
 import { OomamiApiError } from "./errors";
-import { serializeToolDefinitions } from "./tools";
+import { executeToolCall, serializeToolDefinitions } from "./tools";
 import type {
   AuthTokenProvider,
+  CreateAgentRequest,
   CreateEvent,
   CreateEventOptions,
   CreateEvents,
+  CreateSessionRequest,
+  ListAgentsRequest,
+  ListSessionsRequest,
+  OomamiAgent,
+  OomamiEvent,
   OomamiFullStream,
   OomamiOptions,
+  OomamiSessionWithAgent,
   OomamiStreamPart,
+  ToolCallPart,
   Tools,
+  UpdateAgentRequest,
+  UpdateSessionRequest,
 } from "./types";
 
 import {
@@ -20,13 +30,25 @@ import type { StreamPart } from "./types";
 export { OomamiApiError } from "./errors";
 export type {
   AuthTokenProvider,
+  ArchivedFilter,
+  CreateAgentRequest,
   CreateEvent,
   CreateEventOptions,
   CreateEvents,
+  CreateSessionRequest,
+  ListAgentsRequest,
+  ListSessionsRequest,
+  OomamiAgent,
+  OomamiEvent,
   OomamiFullStream,
   OomamiOptions,
+  OomamiSession,
+  OomamiSessionWithAgent,
   OomamiStreamPart,
   ToolErrorPayload,
+  Tools,
+  UpdateAgentRequest,
+  UpdateSessionRequest,
 } from "./types";
 
 type Credential =
@@ -34,9 +56,31 @@ type Credential =
   | { type: "apiKey"; apiKey: string };
 
 export class Oomami {
+  readonly agents: {
+    create(request: CreateAgentRequest): Promise<OomamiAgent>;
+    list(request: ListAgentsRequest): Promise<OomamiAgent[]>;
+    get(agentId: string): Promise<OomamiAgent>;
+    update(
+      agentId: string,
+      request: UpdateAgentRequest,
+    ): Promise<OomamiAgent>;
+    archive(agentId: string): Promise<OomamiAgent>;
+    restore(agentId: string): Promise<OomamiAgent>;
+  };
+
   readonly sessions: {
+    create(request: CreateSessionRequest): Promise<OomamiSessionWithAgent>;
+    list(request: ListSessionsRequest): Promise<OomamiSessionWithAgent[]>;
+    get(sessionId: string): Promise<OomamiSessionWithAgent>;
+    update(
+      sessionId: string,
+      request: UpdateSessionRequest,
+    ): Promise<OomamiSessionWithAgent>;
+    archive(sessionId: string): Promise<OomamiSessionWithAgent>;
+    restore(sessionId: string): Promise<OomamiSessionWithAgent>;
     events: {
-      create(
+      list(sessionId: string): Promise<OomamiEvent[]>;
+      send(
         sessionId: string,
         events: CreateEvents,
         options?: CreateEventOptions,
@@ -48,30 +92,162 @@ export class Oomami {
   readonly #credential: Credential;
 
   constructor(options: OomamiOptions) {
-    if (options.authToken !== undefined && options.apiKey !== undefined) {
+    const hasAuthToken = typeof options.authToken === "function";
+    const hasApiKey = typeof options.apiKey === "string";
+
+    if (hasAuthToken && hasApiKey) {
       throw new Error("Provide either authToken or apiKey, not both.");
+    }
+    if (!hasAuthToken && !hasApiKey) {
+      throw new Error("Provide either authToken or apiKey.");
     }
 
     this.#baseUrl = options.baseUrl;
-    this.#credential =
-      options.apiKey !== undefined
-        ? { type: "apiKey", apiKey: options.apiKey }
-        : { type: "authToken", authToken: options.authToken };
+    this.#credential = hasApiKey
+      ? { type: "apiKey", apiKey: options.apiKey }
+      : { type: "authToken", authToken: options.authToken };
+    this.agents = {
+      create: (request) => this.#createAgent(request),
+      list: (request) => this.#listAgents(request),
+      get: (agentId) => this.#getAgent(agentId),
+      update: (agentId, request) => this.#updateAgent(agentId, request),
+      archive: (agentId) => this.#archiveAgent(agentId),
+      restore: (agentId) => this.#restoreAgent(agentId),
+    };
     this.sessions = {
+      create: (request) => this.#createSession(request),
+      list: (request) => this.#listSessions(request),
+      get: (sessionId) => this.#getSession(sessionId),
+      update: (sessionId, request) => this.#updateSession(sessionId, request),
+      archive: (sessionId) => this.#archiveSession(sessionId),
+      restore: (sessionId) => this.#restoreSession(sessionId),
       events: {
-        create: (sessionId, events, options) =>
-          this.#createSessionEvents(sessionId, events, options),
+        list: (sessionId) => this.#listSessionEvents(sessionId),
+        send: (sessionId, events, options) =>
+          this.#sendSessionEvents(sessionId, events, options),
       },
     };
   }
 
-  async #createSessionEvents(
+  async #createAgent(request: CreateAgentRequest) {
+    const { organizationId, ...body } = request;
+    return this.#json<OomamiAgent>(
+      `/api/v0/organizations/${encodeURIComponent(organizationId)}/agents`,
+      {
+        method: "POST",
+        body,
+      },
+    );
+  }
+
+  async #listAgents(request: ListAgentsRequest) {
+    const url = this.#url(
+      `/api/v0/organizations/${encodeURIComponent(request.organizationId)}/agents`,
+    );
+    setArchivedQuery(url, request.archived);
+    return this.#json<OomamiAgent[]>(url);
+  }
+
+  async #getAgent(agentId: string) {
+    return this.#json<OomamiAgent>(
+      `/api/v0/agents/${encodeURIComponent(agentId)}`,
+    );
+  }
+
+  async #updateAgent(agentId: string, request: UpdateAgentRequest) {
+    return this.#json<OomamiAgent>(
+      `/api/v0/agents/${encodeURIComponent(agentId)}`,
+      {
+        method: "PATCH",
+        body: request,
+      },
+    );
+  }
+
+  async #archiveAgent(agentId: string) {
+    return this.#json<OomamiAgent>(
+      `/api/v0/agents/${encodeURIComponent(agentId)}/archive`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  async #restoreAgent(agentId: string) {
+    return this.#json<OomamiAgent>(
+      `/api/v0/agents/${encodeURIComponent(agentId)}/restore`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  async #createSession(request: CreateSessionRequest) {
+    const { organizationId, ...body } = request;
+    return this.#json<OomamiSessionWithAgent>(
+      `/api/v0/organizations/${encodeURIComponent(organizationId)}/sessions`,
+      {
+        method: "POST",
+        body,
+      },
+    );
+  }
+
+  async #listSessions(request: ListSessionsRequest) {
+    const url = this.#url(
+      `/api/v0/organizations/${encodeURIComponent(request.organizationId)}/sessions`,
+    );
+    setArchivedQuery(url, request.archived);
+    return this.#json<OomamiSessionWithAgent[]>(url);
+  }
+
+  async #getSession(sessionId: string) {
+    return this.#json<OomamiSessionWithAgent>(
+      `/api/v0/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  }
+
+  async #updateSession(sessionId: string, request: UpdateSessionRequest) {
+    return this.#json<OomamiSessionWithAgent>(
+      `/api/v0/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        body: request,
+      },
+    );
+  }
+
+  async #archiveSession(sessionId: string) {
+    return this.#json<OomamiSessionWithAgent>(
+      `/api/v0/sessions/${encodeURIComponent(sessionId)}/archive`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  async #restoreSession(sessionId: string) {
+    return this.#json<OomamiSessionWithAgent>(
+      `/api/v0/sessions/${encodeURIComponent(sessionId)}/restore`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  async #listSessionEvents(sessionId: string) {
+    return this.#json<OomamiEvent[]>(
+      `/api/v0/sessions/${encodeURIComponent(sessionId)}/events`,
+    );
+  }
+
+  async #sendSessionEvents(
     sessionId: string,
     events: CreateEvents,
     options: CreateEventOptions = {},
   ): Promise<OomamiFullStream> {
     const toolDefinitions = serializeToolDefinitions(options.tools);
-    let stream = await this.#postSessionEvents(
+    const stream = await this.#postSessionEvents(
       sessionId,
       normalizeEvents(events),
       toolDefinitions,
@@ -80,7 +256,13 @@ export class Oomami {
     const readableStream = new ReadableStream<OomamiStreamPart>({
       start: async (controller) => {
         try {
-          await this.readStream(sessionId, stream, controller, options.tools);
+          await this.readStream(
+            sessionId,
+            stream,
+            controller,
+            options.tools,
+            options.toModelError,
+          );
           controller.close();
         } catch (error) {
           controller.error(error);
@@ -95,35 +277,36 @@ export class Oomami {
     stream: ReadableStream<OomamiStreamPart>,
     controller: ReadableStreamDefaultController<OomamiStreamPart>,
     tools?: Tools,
+    toModelError?: CreateEventOptions["toModelError"],
   ) {
-    tools = tools ?? {};
     const reader = stream.getReader();
-    while (true) {
-      const { done, value: part } = await reader.read();
-      if (done) break;
-      controller.enqueue(part);
-      if (part.type === "tool-call") {
-        const tool = tools[part.toolName];
-        if (tool && tool.execute) {
-          const value = await tool.execute(part.input, {
-            toolCallId: part.toolCallId,
-            messages: [],
-          });
+    try {
+      while (true) {
+        const { done, value: part } = await reader.read();
+        if (done) break;
+        controller.enqueue(part);
+        if (part.type === "tool-call") {
+          const result = await executeToolCall(
+            part as ToolCallPart,
+            tools,
+            toModelError,
+          );
+          controller.enqueue(result.streamPart);
           const stream = await this.#postSessionEvents(sessionId, [
-            {
-              type: "agent.tool-result",
-              data: {
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                output: { type: "json", value },
-              },
-            },
+            result.event,
           ]);
-          await this.readStream(sessionId, stream, controller);
+          await this.readStream(
+            sessionId,
+            stream,
+            controller,
+            tools,
+            toModelError,
+          );
         }
       }
+    } finally {
+      reader.releaseLock();
     }
-    reader.releaseLock();
   }
 
   async #postSessionEvents(
@@ -156,6 +339,38 @@ export class Oomami {
     }
 
     return createSseStream(response.body);
+  }
+
+  async #json<T>(
+    path: string | URL,
+    init: { method?: string; body?: unknown } = {},
+  ): Promise<T> {
+    const authHeaders = await this.#authHeaders();
+    const headers: Record<string, string> = {
+      ...authHeaders,
+      Accept: "application/json",
+    };
+    const body =
+      init.body === undefined ? undefined : JSON.stringify(init.body);
+
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(
+      typeof path === "string" ? this.#url(path) : path,
+      {
+        method: init.method ?? "GET",
+        headers,
+        body,
+      },
+    );
+
+    if (!response.ok) {
+      throw new OomamiApiError(response, await response.text());
+    }
+
+    return (await response.json()) as T;
   }
 
   async #authHeaders(): Promise<Record<string, string>> {
@@ -211,4 +426,10 @@ function createSseStream(
 
 function normalizeEvents(events: CreateEvents): CreateEvent[] {
   return Array.isArray(events) ? events : [events];
+}
+
+function setArchivedQuery(url: URL, archived: boolean | undefined) {
+  if (archived !== undefined) {
+    url.searchParams.set("archived", String(archived));
+  }
 }

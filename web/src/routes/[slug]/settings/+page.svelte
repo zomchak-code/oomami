@@ -9,6 +9,7 @@
   import * as Item from "$lib/components/ui/item";
   import Key from "@lucide/svelte/icons/key";
   import Copy from "@lucide/svelte/icons/copy";
+  import Check from "@lucide/svelte/icons/check";
   import Trash from "@lucide/svelte/icons/trash";
   import Plus from "@lucide/svelte/icons/plus";
   import { Input } from "$lib/components/ui/input";
@@ -35,6 +36,43 @@
 
   const keys = $derived(useQuery(api.auth.getApiKeys, { slug }));
   let createdApiKey = $state<string | null>(null);
+  let copiedOrganizationId = $state(false);
+  let organizationIdCopyTimeout: ReturnType<typeof setTimeout> | null = null;
+  let slugSaving = $state(false);
+
+  async function copyOrganizationId() {
+    await navigator.clipboard.writeText(currentOrganization!.id);
+    copiedOrganizationId = true;
+    if (organizationIdCopyTimeout) clearTimeout(organizationIdCopyTimeout);
+    organizationIdCopyTimeout = setTimeout(() => {
+      copiedOrganizationId = false;
+    }, 1500);
+  }
+
+  async function updateSlug(input: HTMLInputElement) {
+    const nextSlug = input.value.trim();
+    if (!nextSlug || nextSlug === currentOrganization!.slug) {
+      input.value = currentOrganization!.slug;
+      return;
+    }
+
+    slugSaving = true;
+    try {
+      const { error } = await authClient.organization.update({
+        organizationId: currentOrganization!.id,
+        data: {
+          slug: nextSlug,
+        },
+      });
+      if (error) {
+        throw error;
+      }
+      $organizations.refetch();
+      goto(resolve(`/${nextSlug}/settings`));
+    } finally {
+      slugSaving = false;
+    }
+  }
 
   async function deleteOrganization() {
     if (!confirm("Are you sure you want to delete this organization?")) return;
@@ -76,6 +114,40 @@
             name: (e.target as HTMLInputElement).value,
           },
         })}
+    />
+
+    <p>Organization ID</p>
+    <Button
+      variant="outline"
+      onclick={copyOrganizationId}
+      class="max-w-full justify-start"
+    >
+      <span class="truncate font-mono text-xs">{currentOrganization.id}</span>
+      {#if copiedOrganizationId}
+        <Check />
+      {:else}
+        <Copy />
+      {/if}
+    </Button>
+
+    <p>Update slug</p>
+    <Input
+      type="text"
+      value={currentOrganization.slug}
+      disabled={slugSaving}
+      onblur={(e: FocusEvent) =>
+        updateSlug(e.currentTarget as HTMLInputElement)}
+      onkeydown={(e: KeyboardEvent) => {
+        const input = e.currentTarget as HTMLInputElement;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          updateSlug(input);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          input.value = currentOrganization.slug;
+          input.blur();
+        }
+      }}
     />
 
     <p>API keys</p>

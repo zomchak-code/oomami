@@ -1,14 +1,17 @@
-import type { EventBody } from "conv/schema";
+import type { EventBody, PersistedEvent } from "conv/schema";
 import type { TextStreamPart, Tool, ToolSet } from "ai";
+import type { z } from "zod";
 
-export type CreateEvent = EventBody;
+export type CreateEvent = Extract<
+  EventBody,
+  { type: "user.message" } | { type: "agent.tool-result" }
+>;
 export type CreateEvents = CreateEvent | CreateEvent[];
 export type AuthTokenProvider = () => string | null | Promise<string | null>;
 export type ToolErrorPayload = { message: string };
 export type OomamiStreamPart = TextStreamPart<ToolSet>;
 export type OomamiFullStream = ReadableStream<OomamiStreamPart> &
   AsyncIterable<OomamiStreamPart>;
-import type { z } from "zod";
 
 export type Tools = Record<
   string,
@@ -18,7 +21,7 @@ export type Tools = Record<
 export type CreateEventOptions = {
   tools?: Tools;
   // maxSteps?: number;
-  // toModelError?: (error: unknown) => ToolErrorPayload | string | unknown;
+  toModelError?: (error: unknown) => ToolErrorPayload | string | unknown;
 };
 
 export type ToModelError =
@@ -40,6 +43,62 @@ export type OomamiOptions = BaseOomamiOptions &
         authToken?: never;
       }
   );
+
+export type OomamiAgent = {
+  _id: string;
+  _creationTime: number;
+  organizationId: string;
+  name: string;
+  systemPrompt: string;
+  archivedAt?: number;
+};
+
+export type OomamiSession = {
+  _id: string;
+  _creationTime: number;
+  agentId: string;
+  name: string;
+  archivedAt?: number;
+};
+
+export type OomamiSessionWithAgent = OomamiSession & {
+  agent: OomamiAgent;
+};
+
+export type OomamiEvent = PersistedEvent;
+
+export type ArchivedFilter = {
+  archived?: boolean;
+};
+
+export type CreateAgentRequest = {
+  organizationId: string;
+  name?: string;
+  systemPrompt?: string;
+};
+
+export type ListAgentsRequest = ArchivedFilter & {
+  organizationId: string;
+};
+
+export type UpdateAgentRequest = {
+  name?: string;
+  systemPrompt?: string;
+};
+
+export type CreateSessionRequest = {
+  organizationId: string;
+  agentId: string;
+  name?: string;
+};
+
+export type ListSessionsRequest = ArchivedFilter & {
+  organizationId: string;
+};
+
+export type UpdateSessionRequest = {
+  name: string;
+};
 
 export type StreamPart = OomamiStreamPart & {
   type: string;

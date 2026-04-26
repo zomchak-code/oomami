@@ -3,6 +3,7 @@ import {
   type AuthFunctions,
   type GenericCtx,
 } from "@convex-dev/better-auth";
+import { requireRunMutationCtx } from "@convex-dev/better-auth/utils";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { components, internal } from "./_generated/api";
 import { type DataModel, type Id } from "./_generated/dataModel";
@@ -33,6 +34,10 @@ export const authComponent = createClient<DataModel, typeof authSchema>(
     triggers: {
       user: {
         onCreate: async (ctx, doc) => {
+          if (!doc.isAnonymous) {
+            return;
+          }
+
           const name = fakeName();
           const createdAt = Date.now();
 
@@ -75,16 +80,46 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
   ({
     baseURL: siteUrl,
     database: authComponent.adapter(ctx),
+    emailAndPassword: {
+      enabled: true,
+    },
     plugins: [
       // The Convex plugin is required for Convex compatibility
       convex({ authConfig }),
-      anonymous(),
+      anonymous({
+        onLinkAccount: async ({ anonymousUser, newUser }) => {
+          const anonymousUserId = getBetterAuthUserId(anonymousUser.user);
+          const newUserId = getBetterAuthUserId(newUser.user);
+
+          if (!anonymousUserId || !newUserId) {
+            return;
+          }
+
+          await requireRunMutationCtx(ctx).runMutation(
+            components.betterAuth.adapter.updateMany,
+            {
+              input: {
+                model: "member",
+                where: [{ field: "userId", value: anonymousUserId }],
+                update: { userId: newUserId },
+              },
+              paginationOpts: {
+                cursor: null,
+                numItems: 100,
+              },
+            },
+          );
+        },
+      }),
       organization(),
       apiKey([
         {
           configId: "org",
           defaultPrefix: "oom_",
           references: "organization",
+          rateLimit: {
+            enabled: false,
+          },
         },
       ]) as BetterAuthPlugin,
     ],
@@ -94,8 +129,17 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth(createAuthOptions(ctx));
 };
 
+function getBetterAuthUserId(user: { id?: string; _id?: string }) {
+  return user._id ?? user.id;
+}
+
 type SessionOrganization = {
   sessionId: Id<"sessions">;
+  agentId: Id<"agents">;
+  organizationId: string;
+};
+
+type AgentOrganization = {
   agentId: Id<"agents">;
   organizationId: string;
 };
@@ -131,6 +175,15 @@ export type AuthorizedSessionAccess = SessionOrganization & {
   principal: AuthPrincipal;
 };
 
+export type AuthorizedOrganizationAccess = {
+  organizationId: string;
+  principal: AuthPrincipal;
+};
+
+export type AuthorizedAgentAccess = AgentOrganization & {
+  principal: AuthPrincipal;
+};
+
 export class HttpAuthError extends Error {
   constructor(
     readonly status: 401 | 403,
@@ -146,18 +199,68 @@ export async function authorizeSessionAccess(
   sessionId: Id<"sessions">,
   headers: Headers,
 ): Promise<AuthorizedSessionAccess> {
+  const sessionOrganization = await getSessionOrganization(ctx, sessionId);
+  const access = await authorizeOrganizationAccess(
+    ctx,
+    sessionOrganization.organizationId,
+    headers,
+  );
+
+  return {
+    ...sessionOrganization,
+    principal: access.principal,
+  };
+}
+
+export async function authorizeAgentAccess(
+  ctx: GenericActionCtx<DataModel>,
+  agentId: Id<"agents">,
+  headers: Headers,
+): Promise<AuthorizedAgentAccess> {
+  const agentOrganization = await ctx.runQuery(
+    internal.agents.getOrganizationIdForAgent,
+    { id: agentId },
+  );
+  const access = await authorizeOrganizationAccess(
+    ctx,
+    agentOrganization.organizationId,
+    headers,
+  );
+
+  return {
+    ...agentOrganization,
+    principal: access.principal,
+  };
+}
+
+export async function authorizeOrganizationAccess(
+  ctx: GenericActionCtx<DataModel>,
+  organizationId: string,
+  headers: Headers,
+): Promise<AuthorizedOrganizationAccess> {
   const apiKeyValue = headers.get("x-api-key")?.trim();
 
   if (apiKeyValue) {
-    return authorizeApiKeySessionAccess(ctx, sessionId, apiKeyValue);
+    const verifiedKey = await verifyOrganizationApiKey(ctx, apiKeyValue);
+    if (verifiedKey.referenceId !== organizationId) {
+      throw new HttpAuthError(403, "Forbidden");
+    }
+
+    return {
+      organizationId,
+      principal: {
+        kind: "apiKey",
+        apiKeyId: verifiedKey._id ?? verifiedKey.id ?? "",
+        organizationId: verifiedKey.referenceId,
+      },
+    };
   }
 
   const user = await getAuthUserForHttp(ctx);
-  const sessionOrganization = await getSessionOrganization(ctx, sessionId);
   const membership = await ctx.runQuery(components.betterAuth.adapter.findOne, {
     model: "member",
     where: [
-      { field: "organizationId", value: sessionOrganization.organizationId },
+      { field: "organizationId", value: organizationId },
       { field: "userId", value: user._id },
     ],
   });
@@ -166,16 +269,15 @@ export async function authorizeSessionAccess(
   }
 
   return {
-    ...sessionOrganization,
+    organizationId,
     principal: { kind: "user", userId: user._id },
   };
 }
 
-async function authorizeApiKeySessionAccess(
+async function verifyOrganizationApiKey(
   ctx: GenericActionCtx<DataModel>,
-  sessionId: Id<"sessions">,
   apiKeyValue: string,
-): Promise<AuthorizedSessionAccess> {
+): Promise<VerifiedApiKey> {
   const auth = createAuth(ctx) as unknown as AuthWithApiKey;
   let result: VerifyApiKeyResult;
   try {
@@ -193,19 +295,7 @@ async function authorizeApiKeySessionAccess(
     throw new HttpAuthError(401, result.error?.message ?? "Invalid API key");
   }
 
-  const sessionOrganization = await getSessionOrganization(ctx, sessionId);
-  if (result.key.referenceId !== sessionOrganization.organizationId) {
-    throw new HttpAuthError(403, "Forbidden");
-  }
-
-  return {
-    ...sessionOrganization,
-    principal: {
-      kind: "apiKey",
-      apiKeyId: result.key._id ?? result.key.id ?? "",
-      organizationId: result.key.referenceId,
-    },
-  };
+  return result.key;
 }
 
 function getSessionOrganization(
