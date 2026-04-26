@@ -14,9 +14,11 @@
     "check": "bun compile"
   },
   "dependencies": {
-    "conv": "workspace:*"
+    "conv": "workspace:*",
+    "eventsource-parser": "^3.0.8"
   },
   "peerDependencies": {
+    "ai": "^6",
     "typescript": "^5"
   }
 }

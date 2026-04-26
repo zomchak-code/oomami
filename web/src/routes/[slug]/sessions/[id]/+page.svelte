@@ -9,6 +9,7 @@
   import { useAuth } from "@mmailaender/convex-better-auth-svelte/svelte";
   import Badge from "$lib/components/ui/badge/badge.svelte";
   import { Oomami } from "@oomami/sdk";
+  import { z } from "zod";
 
   const id = $derived(sessionIdSchema.parse(page.params.id));
 
@@ -27,20 +28,34 @@
     if (!message) return;
     console.log(message);
 
-    const fetched = oomami.sessions.events.create(id, {
-      type: "user.message",
-      data: { role: "user", content: message },
-    });
+    const fetched = oomami.sessions.events.create(
+      id,
+      {
+        type: "user.message",
+        data: { role: "user", content: message },
+      },
+      {
+        tools: {
+          getWeather: {
+            inputSchema: z.object({
+              city: z.string(),
+            }),
+            execute: async (input) => {
+              return `The weather in ${input.city} is sunny.`;
+            },
+          },
+        },
+      },
+    );
     message = "";
     const response = await fetched;
-    const reader = response.body?.getReader();
+    const reader = response.getReader();
     while (true) {
       const result = await reader?.read();
       if (!result) break;
       const { done, value } = result;
       if (done) break;
-      const text = new TextDecoder().decode(value);
-      console.log(text);
+      console.log(value);
     }
   }
 </script>
@@ -60,30 +75,16 @@
           <Badge variant="secondary">text</Badge>
           {event.data.content}
         </div>
-      {:else if event.type === "assistant.response"}
-        {#each event.data as message, idx (idx)}
-          <div>
-            <Badge variant="secondary">{message.role}</Badge>
-            <div>
-              {#if typeof message.content === "string"}
-                <p>{message.content}</p>
-              {:else}
-                {#each message.content as content (content)}
-                  <Badge variant="secondary">{content.type}</Badge>
-                  {#if content.type === "text" || content.type === "reasoning"}
-                    <p>{content.text}</p>
-                  {:else if content.type === "tool-call"}
-                    <p>{content.input}</p>
-                  {:else if content.type === "tool-result"}
-                    <p>{content.output}</p>
-                  {:else}
-                    {JSON.stringify(content)}
-                  {/if}
-                {/each}
-              {/if}
-            </div>
-          </div>
-        {/each}
+      {:else if event.type === "agent.text" || event.type === "agent.reasoning"}
+        <p>{event.data.text}</p>
+      {:else if event.type === "agent.tool-call"}
+        <Badge variant="secondary">{event.data.toolName}</Badge>
+        <p>{JSON.stringify(event.data.input)}</p>
+      {:else if event.type === "agent.tool-result"}
+        <Badge variant="secondary">{event.data.toolName}</Badge>
+        <p>{JSON.stringify(event.data.output.value)}</p>
+      {:else}
+        {JSON.stringify(event)}
       {/if}
     </div>
   {/each}
