@@ -130,10 +130,13 @@ export default defineSchema({
   agents: defineTable({
     organizationId: v.string(),
     name: v.string(),
+    systemPrompt: v.string(),
+    archivedAt: v.optional(v.number()),
   }),
   sessions: defineTable({
     agentId: v.id("agents"),
     name: v.string(),
+    archivedAt: v.optional(v.number()),
   }),
   events: defineTable({
     sessionId: v.id("sessions"),

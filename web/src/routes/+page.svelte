@@ -5,7 +5,7 @@
   import { Button } from "$lib/components/ui/button";
   import Building from "@lucide/svelte/icons/building";
   import Plus from "@lucide/svelte/icons/plus";
-  import { fakeName } from "$lib/utils";
+  import { fakeName } from "$lib/faker";
 
   const activeOrganization = authClient.useActiveOrganization();
   const organizations = authClient.useListOrganizations();

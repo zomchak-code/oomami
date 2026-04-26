@@ -3,7 +3,7 @@
   import { authClient } from "$lib/auth-client";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { fakeName } from "$lib/utils";
+  import { fakeName } from "$lib/faker";
   import z from "zod";
   import { page } from "$app/state";
   import Building from "@lucide/svelte/icons/building";

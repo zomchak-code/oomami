@@ -5,7 +5,6 @@ import {
   jsonSchema,
   streamText,
   tool,
-  type ContentPart,
   type ModelMessage,
   type TextPart,
   type TextStreamPart,

@@ -12,7 +12,14 @@ export const create = mutation({
     agentId: v.id("agents"),
   },
   handler: async (ctx, args) => {
-    await authedOrganizationByAgentId(ctx, args.agentId);
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent) {
+      throw new ConvexError("Agent not found");
+    }
+    await authedOrganizationById(ctx, agent.organizationId);
+    if (agent.archivedAt !== undefined) {
+      throw new ConvexError("Cannot create a session for an archived agent");
+    }
 
     const session = await ctx.db.insert("sessions", {
       agentId: args.agentId,
@@ -26,9 +33,11 @@ export const create = mutation({
 export const list = query({
   args: {
     slug: v.string(),
+    archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const organization = await authedOrganizationBySlug(ctx, args.slug);
+    const wantArchived = args.archived ?? false;
 
     const agents = await ctx.db
       .query("agents")
@@ -39,8 +48,21 @@ export const list = query({
       agents.map(async (agent) => {
         return ctx.db
           .query("sessions")
-          .filter((q) => q.eq(q.field("agentId"), agent._id))
-          .collect();
+          .filter((q) =>
+            q.and(
+              q.eq(q.field("agentId"), agent._id),
+              wantArchived
+                ? q.neq(q.field("archivedAt"), undefined)
+                : q.eq(q.field("archivedAt"), undefined),
+            ),
+          )
+          .collect()
+          .then((sessions) =>
+            sessions.map((session) => ({
+              ...session,
+              agent,
+            })),
+          );
       }),
     );
 
@@ -67,5 +89,55 @@ export const get = query({
       ...session,
       agent,
     };
+  },
+});
+
+export const archive = mutation({
+  args: {
+    id: v.id("sessions"),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      throw new ConvexError("Session not found");
+    }
+    await authedOrganizationByAgentId(ctx, session.agentId);
+    await ctx.db.patch(args.id, { archivedAt: Date.now() });
+  },
+});
+
+export const restore = mutation({
+  args: {
+    id: v.id("sessions"),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      throw new ConvexError("Session not found");
+    }
+    await authedOrganizationByAgentId(ctx, session.agentId);
+    await ctx.db.patch(args.id, { archivedAt: undefined });
+  },
+});
+
+export const updateName = mutation({
+  args: {
+    id: v.id("sessions"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.id);
+    if (!session) {
+      throw new ConvexError("Session not found");
+    }
+    await authedOrganizationByAgentId(ctx, session.agentId);
+    if (session.archivedAt !== undefined) {
+      throw new ConvexError("Cannot edit an archived session");
+    }
+    const trimmed = args.name.trim();
+    if (!trimmed) {
+      throw new ConvexError("Name cannot be empty");
+    }
+    await ctx.db.patch(args.id, { name: trimmed });
   },
 });

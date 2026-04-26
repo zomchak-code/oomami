@@ -14,7 +14,7 @@
   import { Input } from "$lib/components/ui/input";
   import { Button } from "$lib/components/ui/button";
   import Flame from "@lucide/svelte/icons/flame";
-  import { fakeName } from "$lib/utils";
+  import { fakeName } from "$lib/faker";
 
   const slug = $derived(z.string().parse(page.params.slug));
 

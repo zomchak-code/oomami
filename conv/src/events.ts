@@ -1,4 +1,4 @@
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import { authedOrganizationBySessionId } from "./auth";
 import type { DataModel, Id } from "./_generated/dataModel";
@@ -23,10 +23,21 @@ export function updateEvent(
   return ctx.runMutation(api.events.update, { id, event });
 }
 
+async function ensureSessionWritable(ctx: MutationCtx, sessionId: Id<"sessions">) {
+  const session = await ctx.db.get(sessionId);
+  if (!session) {
+    throw new ConvexError("Session not found");
+  }
+  if (session.archivedAt !== undefined) {
+    throw new ConvexError("Cannot write to an archived session");
+  }
+}
+
 export const create = mutation({
   handler: async (ctx, args) => {
     const event = eventSchema.parse(args);
     await authedOrganizationBySessionId(ctx, event.sessionId);
+    await ensureSessionWritable(ctx, event.sessionId);
     return ctx.db.insert("events", event);
   },
 });
@@ -39,11 +50,15 @@ export const update = mutation({
         event: eventSchema,
       })
       .parse(args);
-    await authedOrganizationBySessionId(ctx, input.event.sessionId);
     const existing = await ctx.db.get(input.id);
     if (!existing) {
       throw new ConvexError("Event not found");
     }
+    await authedOrganizationBySessionId(ctx, existing.sessionId);
+    if (existing.sessionId !== input.event.sessionId) {
+      throw new ConvexError("Event session mismatch");
+    }
+    await ensureSessionWritable(ctx, existing.sessionId);
     return ctx.db.patch(existing._id, { data: input.event.data });
   },
 });

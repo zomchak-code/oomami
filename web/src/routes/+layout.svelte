@@ -28,10 +28,8 @@
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
-<main class="p-4">
-  {#if auth.isLoading}
-    Loading...
-  {:else}
-    {@render children()}
-  {/if}
-</main>
+{#if auth.isLoading}
+  <main class="p-4">Loading...</main>
+{:else}
+  {@render children()}
+{/if}

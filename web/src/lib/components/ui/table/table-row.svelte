@@ -7,14 +7,9 @@
 		class: className,
 		children,
 		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {} = $props();
+	}: WithElementRef<HTMLAttributes<HTMLTableRowElement>> = $props();
 </script>
 
-<div
-	bind:this={ref}
-	data-slot="select-label"
-	class={cn("text-muted-foreground px-1.5 py-1 text-xs", className)}
-	{...restProps}
->
+<tr bind:this={ref} data-slot="table-row" class={cn("hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors", className)} {...restProps}>
 	{@render children?.()}
-</div>
+</tr>
